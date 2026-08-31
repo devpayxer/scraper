@@ -1,0 +1,397 @@
+# Part-type taxonomy. This is what answers "which kind of piece sells most".
+#
+# Rules are evaluated TOP TO BOTTOM and the FIRST match wins, so the list is
+# ordered specific -> general. That ordering is doing real work:
+#
+#   "Radiator Coolant Overflow Reservoir Tank"  -> Coolant Reservoir, not Radiator
+#   "WHEEL RIM TIRE 245/75 R16"                 -> Wheel / Rim, not Tire
+#   "VIEW INTERIOR MIRROR AUTO DIM"             -> Interior Mirror, not Side Mirror
+#
+# `match`   : case-insensitive substrings, matched on word boundaries.
+# `exclude` : if any of these hit, the rule is skipped and matching continues.
+# `group`   : coarse rollup for the report (Lighting, Body, Engine, ...).
+
+categories:
+  # ---------------------------------------------------------------- Lighting
+  - name: Headlight
+    group: Lighting
+    match: [headlight, "head light", headlamp, "head lamp", "hid headlight", "xenon headlight"]
+    exclude: ["headlight bulb", "headlight switch", "headlight lens only", "headlight bracket"]
+  - name: Tail Light
+    group: Lighting
+    match: [taillight, "tail light", taillamp, "tail lamp", "rear lamp", "quarter panel light"]
+  - name: Fog Light
+    group: Lighting
+    match: [foglight, "fog light", "fog lamp", "driving light"]
+  - name: Turn Signal / Marker
+    group: Lighting
+    match: ["turn signal", "marker light", "side marker", "blinker", "repeater light"]
+  - name: Third Brake Light
+    group: Lighting
+    match: ["third brake light", "3rd brake light", "high mount stop"]
+  - name: Interior / Dome Light
+    group: Lighting
+    match: ["dome light", "map light", "courtesy light", "interior light"]
+  - name: Headlight Ballast / Module
+    group: Lighting
+    match: [ballast, "hid igniter", "led driver module", "lighting control module"]
+
+  # -------------------------------------------------------------- Mirrors
+  - name: Interior Mirror
+    group: Mirrors
+    match: ["interior mirror", "rear view mirror", "rearview mirror", "inside mirror", "auto dim mirror"]
+  - name: Side Mirror
+    group: Mirrors
+    match: ["side mirror", "door mirror", "wing mirror", "exterior mirror", "power mirror", "towing mirror"]
+  - name: Mirror Glass / Cover
+    group: Mirrors
+    match: ["mirror glass", "mirror cover", "mirror cap"]
+
+  # ------------------------------------------------------- Wheels & brakes
+  - name: Wheel / Rim
+    group: Wheels & Tires
+    match: [wheel rim, rim, "alloy wheel", "steel wheel", "wheel", "spare wheel"]
+    exclude: ["steering wheel", "wheel bearing", "wheel hub", "wheel speed sensor",
+              "wheel well", "wheel arch", "wheel spacer", "wheel lock", "wheel nut",
+              "wheel stud", "flywheel", "wheel cylinder", "wheel house"]
+  - name: Hubcap / Wheel Cover
+    group: Wheels & Tires
+    match: [hubcap, "hub cap", "wheel cover", "center cap", "wheel skin"]
+  - name: Tire
+    group: Wheels & Tires
+    match: [tire, tyre]
+  - name: Wheel Hub / Bearing
+    group: Suspension & Steering
+    match: ["wheel hub", "hub bearing", "wheel bearing", "hub assembly"]
+  - name: Brake Caliper
+    group: Brakes
+    match: [caliper]
+  - name: Brake Rotor / Pads
+    group: Brakes
+    match: ["brake rotor", "brake disc", "brake pad", "rotor and pad"]
+  - name: Brake Booster / Master Cylinder
+    group: Brakes
+    match: ["brake booster", "master cylinder", "power brake"]
+  - name: ABS Pump / Module
+    group: Brakes
+    match: ["abs pump", "abs module", "abs control", "anti-lock", "antilock"]
+  - name: Parking Brake
+    group: Brakes
+    match: ["parking brake", "emergency brake", "e-brake", "ebrake actuator"]
+
+  # ------------------------------------------------------ Engine & driveline
+  - name: Engine Assembly
+    group: Engine
+    match: ["engine assembly", "engine motor", "long block", "short block", "complete engine", "engine swap"]
+  - name: Transmission
+    group: Driveline
+    match: [transmission, gearbox, transaxle, "trans assembly", cvt]
+    exclude: ["transmission mount", "transmission cooler", "transmission control module",
+              "transmission oil pan", "transmission dipstick", "transmission wiring"]
+  - name: Transfer Case
+    group: Driveline
+    match: ["transfer case"]
+  - name: Differential / Rear End
+    group: Driveline
+    match: [differential, "rear end", "rear diff", "carrier assembly", "ring and pinion"]
+  - name: Axle / CV Shaft
+    group: Driveline
+    match: ["cv axle", "axle shaft", "cv shaft", "half shaft", "halfshaft", "drive axle"]
+  - name: Driveshaft
+    group: Driveline
+    match: [driveshaft, "drive shaft", "prop shaft", "propeller shaft"]
+  - name: Clutch / Flywheel
+    group: Driveline
+    match: [clutch, flywheel, "flex plate", flexplate]
+  - name: Turbocharger / Supercharger
+    group: Engine
+    match: [turbocharger, turbo, supercharger, "turbo charger"]
+    exclude: ["turbo hose", "turbo intercooler"]
+  - name: Cylinder Head
+    group: Engine
+    match: ["cylinder head", "head assembly"]
+  - name: Intake Manifold
+    group: Engine
+    match: ["intake manifold", "upper intake", "lower intake"]
+  - name: Exhaust Manifold / Header
+    group: Exhaust
+    match: ["exhaust manifold", header, "manifold header"]
+  - name: Catalytic Converter
+    group: Exhaust
+    match: ["catalytic converter", "cat converter", "catalyst"]
+  - name: Muffler / Exhaust
+    group: Exhaust
+    match: [muffler, "exhaust pipe", "exhaust system", resonator, tailpipe, "tail pipe", downpipe]
+  - name: Oil Pan / Oil Pump
+    group: Engine
+    match: ["oil pan", "oil pump", "oil cooler", "oil filter housing", "oil separator"]
+  - name: Timing Cover / Chain
+    group: Engine
+    match: ["timing cover", "timing chain", "timing belt", "timing gear"]
+  - name: Valve Cover
+    group: Engine
+    match: ["valve cover", "cam cover", "camshaft cover"]
+  - name: Water Pump
+    group: Cooling
+    match: ["water pump"]
+  - name: Thermostat / Housing
+    group: Cooling
+    match: [thermostat, "coolant housing", "water outlet"]
+  - name: Coolant Reservoir
+    group: Cooling
+    match: ["coolant reservoir", "overflow tank", "overflow reservoir", "expansion tank",
+            "coolant tank", "coolant bottle", "recovery tank", "degas bottle"]
+  - name: Radiator
+    group: Cooling
+    match: [radiator]
+    exclude: ["radiator support", "radiator hose", "radiator cap", "radiator fan"]
+  - name: Radiator Support
+    group: Body
+    match: ["radiator support", "core support"]
+  - name: Cooling Fan
+    group: Cooling
+    match: ["cooling fan", "radiator fan", "fan assembly", "fan shroud", "fan clutch", "fan blade"]
+  - name: A/C Condenser
+    group: HVAC
+    match: [condenser, "ac condenser", "a/c condenser"]
+  - name: A/C Compressor
+    group: HVAC
+    match: ["ac compressor", "a/c compressor", "air conditioning compressor", "ac pump"]
+  - name: Intercooler
+    group: Engine
+    match: [intercooler, "charge air cooler"]
+  - name: Alternator
+    group: Electrical
+    match: [alternator, generator]
+  - name: Starter
+    group: Electrical
+    match: ["starter motor", starter]
+  - name: Ignition Coil / Plugs
+    group: Engine
+    match: ["ignition coil", "coil pack", "spark plug", "glow plug", "distributor"]
+  - name: Fuel Pump
+    group: Fuel
+    match: ["fuel pump", "gas pump", "fuel sending unit", "fuel sender"]
+  - name: Fuel Injector
+    group: Fuel
+    match: ["fuel injector", injector, "injection pump", "fuel rail"]
+  - name: Throttle Body
+    group: Fuel
+    match: ["throttle body", "throttle valve", "throttle actuator"]
+  - name: Fuel Tank / Filler
+    group: Fuel
+    match: ["fuel tank", "gas tank", "fuel filler", "gas cap", "fuel door", "filler neck"]
+  - name: Mass Air Flow Sensor
+    group: Sensors
+    match: ["mass air flow", "maf sensor", "air flow meter"]
+  - name: Oxygen Sensor
+    group: Sensors
+    match: ["oxygen sensor", "o2 sensor", "lambda sensor", "air fuel ratio sensor"]
+  - name: Air Intake / Filter Box
+    group: Engine
+    match: ["air intake", "air filter box", "air cleaner", "intake tube", "intake hose",
+            "air box", airbox, "intake resonator"]
+  - name: Engine / Trans Mount
+    group: Engine
+    match: ["engine mount", "motor mount", "transmission mount"]
+  - name: Belt / Pulley / Tensioner
+    group: Engine
+    match: [tensioner, "idler pulley", "crank pulley", "harmonic balancer", "serpentine belt", "belt pulley"]
+  - name: Vacuum Pump / EGR
+    group: Engine
+    match: ["vacuum pump", "egr valve", "egr cooler", "pcv valve", "purge valve", "evap canister"]
+
+  # ------------------------------------------------ Electronics & modules
+  - name: ECU / ECM / PCM
+    group: Modules
+    match: ["engine computer", ecu, ecm, pcm, "powertrain control", "engine control module", "engine control unit"]
+  - name: TCM / Transmission Module
+    group: Modules
+    match: [tcm, "transmission control module", "transmission computer"]
+  - name: Body Control Module
+    group: Modules
+    match: [bcm, "body control module", "body computer"]
+  - name: Instrument Cluster
+    group: Interior
+    match: ["instrument cluster", speedometer, "gauge cluster", "speedo cluster", "combination meter"]
+  - name: Radio / Head Unit
+    group: Infotainment
+    match: [radio, "head unit", "cd player", "navigation unit", "nav unit", "infotainment",
+            "display screen", "touch screen", "multimedia", "stereo receiver", "apim", "mib"]
+  - name: Display / Screen
+    group: Infotainment
+    match: ["info display", "information display", "lcd screen", "monitor screen", "hud", "heads up display"]
+  - name: Amplifier / Speaker
+    group: Infotainment
+    match: [amplifier, subwoofer, speaker, "sound system", "bose amp", "harman"]
+  - name: Backup / Surround Camera
+    group: Electronics
+    match: ["backup camera", "back up camera", "rear view camera", "reverse camera",
+            "surround camera", "360 camera", "lane camera", "front camera"]
+  - name: Parking / Blind Spot Sensor
+    group: Sensors
+    match: ["parking sensor", "park assist", "blind spot", "pdc sensor", "distance sensor", "radar sensor"]
+  - name: Wiring Harness
+    group: Electrical
+    match: ["wire harness", "wiring harness", "engine harness", "body harness", "pigtail connector"]
+  - name: Fuse Box / Relay
+    group: Electrical
+    match: ["fuse box", "fuse block", "relay box", "junction box", "power distribution"]
+  - name: Battery / Cable
+    group: Electrical
+    match: ["battery tray", "battery cable", "battery terminal", "hybrid battery", "battery pack"]
+  - name: Key / Fob / Ignition Switch
+    group: Electronics
+    match: ["key fob", keyless, "remote key", "ignition switch", "ignition lock", "smart key", immobilizer]
+  - name: Switch / Button
+    group: Interior
+    match: [switch, button, "control panel switch"]
+    exclude: ["ignition switch", "headlight switch assembly only"]
+  - name: Sensor (other)
+    group: Sensors
+    match: [sensor]
+
+  # ----------------------------------------------- Suspension & steering
+  - name: Strut / Shock
+    group: Suspension & Steering
+    match: [strut, "shock absorber", shock, "coil over", coilover, "air suspension", "air spring", "air strut"]
+  - name: Control Arm
+    group: Suspension & Steering
+    match: ["control arm", "trailing arm", "lateral link", "radius arm"]
+  - name: Knuckle / Spindle
+    group: Suspension & Steering
+    match: [knuckle, spindle, "steering knuckle"]
+  - name: Steering Rack
+    group: Suspension & Steering
+    match: ["steering rack", "rack and pinion", "rack & pinion", "steering gear"]
+  - name: Power Steering Pump
+    group: Suspension & Steering
+    match: ["power steering pump", "steering pump", "ps pump"]
+  - name: Steering Column
+    group: Suspension & Steering
+    match: ["steering column", "column shaft", "intermediate shaft"]
+  - name: Steering Wheel
+    group: Interior
+    match: ["steering wheel"]
+  - name: Subframe / Crossmember
+    group: Suspension & Steering
+    match: [subframe, "sub frame", crossmember, "cross member", "k-frame", "engine cradle"]
+  - name: Sway Bar / Link
+    group: Suspension & Steering
+    match: ["sway bar", "stabilizer bar", "sway link", "end link"]
+  - name: Leaf Spring / Coil Spring
+    group: Suspension & Steering
+    match: ["leaf spring", "coil spring", "spring set"]
+
+  # -------------------------------------------------------------- Safety
+  - name: Airbag
+    group: Safety
+    match: [airbag, "air bag", "srs module", "srs unit", "restraint module", "knee bag"]
+  - name: Seat Belt
+    group: Safety
+    match: ["seat belt", seatbelt, "belt buckle", retractor]
+
+  # ---------------------------------------------------------------- Body
+  - name: Bumper Cover
+    group: Body
+    match: ["bumper cover", "front bumper", "rear bumper", bumper]
+    exclude: ["bumper bracket", "bumper reinforcement", "bumper absorber", "bumper trim"]
+  - name: Bumper Reinforcement / Bracket
+    group: Body
+    match: ["bumper reinforcement", "bumper bracket", "bumper absorber", "impact bar"]
+  - name: Fender
+    group: Body
+    match: [fender, "fender liner", "quarter panel"]
+  - name: Hood
+    group: Body
+    match: [hood, bonnet]
+    exclude: ["hood latch", "hood strut", "hood hinge", "hood release", "hood insulation"]
+  - name: Door Shell
+    group: Body
+    match: ["door shell", "door assembly", "front door", "rear door", "door skin"]
+  - name: Door Panel / Trim
+    group: Interior
+    match: ["door panel", "door trim", "door card"]
+  - name: Door Handle / Latch
+    group: Body
+    match: ["door handle", "door latch", "door lock actuator", "hood latch", "trunk latch"]
+  - name: Window Regulator / Motor
+    group: Body
+    match: ["window regulator", "window motor", "window lift"]
+  - name: Glass / Windshield
+    group: Body
+    match: [windshield, "window glass", "door glass", "quarter glass", "back glass", "rear glass"]
+  - name: Trunk / Liftgate / Tailgate
+    group: Body
+    match: [tailgate, liftgate, "trunk lid", "deck lid", "hatch", "trunk assembly"]
+  - name: Grille
+    group: Body
+    match: [grille, grill, "grille shell"]
+  - name: Spoiler / Wing
+    group: Body
+    match: [spoiler, "rear wing", "lip kit", "air dam", "front lip"]
+  - name: Roof Rack / Rail
+    group: Body
+    match: ["roof rack", "roof rail", "cross bar", crossbar, "luggage rack"]
+  - name: Sunroof / Moonroof
+    group: Body
+    match: [sunroof, moonroof, "panoramic roof", "roof glass"]
+  - name: Rocker / Running Board
+    group: Body
+    match: ["running board", "side step", "nerf bar", "rocker panel", "step bar"]
+  - name: Splash Shield / Undercover
+    group: Body
+    match: ["splash shield", "under cover", "undercover", "belly pan", "skid plate"]
+  - name: Emblem / Badge / Trim
+    group: Body
+    match: [emblem, badge, "nameplate", "molding", moulding, "chrome trim", "body trim"]
+  - name: Wiper Motor / Arm
+    group: Body
+    match: ["wiper motor", "wiper arm", "wiper transmission", "wiper linkage", "washer pump", "washer bottle"]
+  - name: Hinge / Strut / Support
+    group: Body
+    match: [hinge, "lift support", "gas strut", "shock strut support"]
+
+  # ------------------------------------------------------------ Interior
+  - name: Seat
+    group: Interior
+    match: [seat, "seat cushion", "seat back", "bench seat", "bucket seat"]
+    exclude: ["seat belt", "seat switch", "seat motor", "seat cover set", "child seat"]
+  - name: Seat Motor / Track
+    group: Interior
+    match: ["seat motor", "seat track", "seat frame", "seat adjuster"]
+  - name: Center Console
+    group: Interior
+    match: ["center console", "console lid", "armrest", "arm rest", "console assembly"]
+  - name: Dashboard / Dash Trim
+    group: Interior
+    match: [dashboard, "dash panel", "dash trim", "dash bezel", "instrument panel", "glove box", glovebox]
+  - name: Carpet / Headliner
+    group: Interior
+    match: [carpet, headliner, "floor mat", "cargo liner", "trunk liner"]
+  - name: Sun Visor
+    group: Interior
+    match: ["sun visor", sunvisor]
+  - name: Shift Knob / Shifter
+    group: Interior
+    match: [shifter, "shift knob", "gear selector", "shift lever", "shift cable"]
+  - name: Pedal / Pedal Assembly
+    group: Interior
+    match: ["gas pedal", "brake pedal", "clutch pedal", "pedal assembly", "accelerator pedal"]
+  - name: Pillar / Interior Trim
+    group: Interior
+    match: ["pillar trim", "a pillar", "b pillar", "c pillar", "kick panel", "scuff plate", "sill plate"]
+
+  # --------------------------------------------------------------- HVAC
+  - name: Blower Motor
+    group: HVAC
+    match: ["blower motor", "blower fan", "heater fan"]
+  - name: Heater Core
+    group: HVAC
+    match: ["heater core", "heater box", "hvac box", "heater assembly"]
+  - name: Climate Control Panel
+    group: HVAC
+    match: ["climate control", "ac control", "a/c control", "heater control", "temperature control", "hvac control"]
+  - name: A/C Lines / Dryer
+    group: HVAC
+    match: ["ac line", "a/c line", "receiver drier", "accumulator", "expansion valve"]

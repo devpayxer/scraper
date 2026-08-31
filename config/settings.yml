@@ -1,0 +1,39 @@
+# Global scraper settings.
+
+# ---------------------------------------------------------------- targeting
+# 6028 = eBay Motors > Parts & Accessories > Car & Truck Parts.
+# Set to null to scrape everything a seller has sold, regardless of category.
+default_category: 6028
+marketplace: www.ebay.com
+
+# Sold listings on eBay only go back ~90 days. Rows older than this are still
+# stored (they are cheap) but the analysis window defaults to this value.
+lookback_days: 90
+
+# ------------------------------------------------------------------ paging
+items_per_page: 240        # eBay accepts 60 / 120 / 240
+max_pages_per_seller: 40   # hard stop; 40 * 240 = 9600 rows per seller
+stop_on_empty_page: true
+
+# ------------------------------------------------------------------ politeness
+# Be a good citizen. These defaults are deliberately slow: one page every
+# ~6-10s means a 50-seller sweep takes hours, and that is fine -- run it
+# nightly on a cron, not interactively. Do not lower these to hammer eBay.
+delay_seconds: 6.0         # base delay between page requests
+delay_jitter: 4.0          # random 0..N extra seconds on top
+timeout_seconds: 45
+max_retries: 3
+retry_backoff: 5.0         # seconds, doubled each retry
+pause_on_block_seconds: 900  # on a 403/captcha, sleep this long before resuming
+
+# ------------------------------------------------------------------ fetching
+# curl_cffi -> impersonates a real Chrome TLS fingerprint (recommended)
+# playwright -> real headless Chromium, slower, needs `playwright install chromium`
+engine: curl_cffi
+impersonate: chrome124
+
+# Cache every fetched page to disk. Re-running a scrape then costs nothing and
+# you can re-parse historical HTML after improving the parser (`reparse`).
+cache_dir: data/cache
+cache_ttl_hours: 20
+database: data/parts.db

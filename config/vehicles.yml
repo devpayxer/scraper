@@ -1,0 +1,534 @@
+# Vehicle taxonomy used to pull make/model out of listing titles.
+#
+# How matching works (see ebayparts/enrich.py):
+#   1. Every make alias is searched for in the title. The LEFTMOST match wins,
+#      because eBay titles are written "<years> <make> <model> <part> ...".
+#   2. Models are then only searched WITHIN the winning make's list. This is
+#      what stops "CHEVY TAHOE WHEEL RIM TIRE PATHFINDER HT" from being logged
+#      as a Nissan Pathfinder -- "Pathfinder" there is a tire model, and it is
+#      not in Chevrolet's model list, so it is never considered.
+#   3. Longest model alias wins ("3 Series" beats "3"), so order here is
+#      irrelevant; specificity is computed at load time.
+#
+# Add makes/models freely. Aliases are matched case-insensitively on word
+# boundaries, so "MB" will not match inside "COMBO".
+
+makes:
+  Acura:
+    aliases: [acura]
+    models:
+      MDX: [mdx]
+      RDX: [rdx]
+      TLX: [tlx]
+      ILX: [ilx]
+      TSX: [tsx]
+      TL: [tl]
+      RL: [rl]
+      RSX: [rsx]
+      Integra: [integra]
+      NSX: [nsx]
+      ZDX: [zdx]
+      CL: [cl]
+
+  Audi:
+    aliases: [audi]
+    models:
+      A3: [a3]
+      A4: [a4, s4]
+      A5: [a5, s5]
+      A6: [a6, s6]
+      A7: [a7, s7]
+      A8: [a8, s8]
+      Q3: [q3]
+      Q5: [q5, sq5]
+      Q7: [q7]
+      Q8: [q8]
+      TT: [tt, tts]
+      R8: [r8]
+      e-tron: [e-tron, etron]
+      RS3: [rs3]
+      RS5: [rs5]
+      RS7: [rs7]
+
+  BMW:
+    aliases: [bmw]
+    models:
+      1 Series: ["1 series", e82, e88]
+      2 Series: ["2 series", f22, f23, g42]
+      3 Series: ["3 series", e46, e90, e91, e92, e93, f30, f31, g20, 328i, 335i, 330i, 320i, 340i]
+      4 Series: ["4 series", f32, f33, f36, g22, 428i, 435i, 430i, 440i]
+      5 Series: ["5 series", e39, e60, f10, g30, 528i, 535i, 530i, 540i, 550i]
+      6 Series: ["6 series", e63, f12, f13, 650i]
+      7 Series: ["7 series", e65, e38, f01, g11, 740i, 750i, 745i]
+      8 Series: ["8 series", g15]
+      X1: [x1]
+      X2: [x2]
+      X3: [x3, f25, g01]
+      X4: [x4]
+      X5: [x5, e70, f15, g05]
+      X6: [x6, e71]
+      X7: [x7]
+      Z3: [z3]
+      Z4: [z4]
+      i3: [i3]
+      i8: [i8]
+      M3: [m3]
+      M4: [m4]
+      M5: [m5]
+      Mini: [mini cooper]
+
+  Buick:
+    aliases: [buick]
+    models:
+      Enclave: [enclave]
+      Encore: [encore]
+      LaCrosse: [lacrosse]
+      Regal: [regal]
+      Verano: [verano]
+      Envision: [envision]
+      Lucerne: [lucerne]
+      Rendezvous: [rendezvous]
+
+  Cadillac:
+    aliases: [cadillac, caddy]
+    models:
+      Escalade: [escalade]
+      CTS: [cts, "cts-v"]
+      ATS: [ats]
+      SRX: [srx]
+      XT5: [xt5]
+      XT4: [xt4]
+      XT6: [xt6]
+      CT6: [ct6]
+      CT5: [ct5]
+      CT4: [ct4]
+      STS: [sts]
+      DTS: [dts]
+      XTS: [xts]
+      Deville: [deville, "de ville"]
+
+  Chevrolet:
+    aliases: [chevrolet, chevy, chev]
+    models:
+      Silverado: [silverado, "1500", "2500", "3500", "2500hd", "3500hd"]
+      Tahoe: [tahoe]
+      Suburban: [suburban]
+      Traverse: [traverse]
+      Equinox: [equinox]
+      Malibu: [malibu]
+      Impala: [impala]
+      Cruze: [cruze]
+      Camaro: [camaro]
+      Corvette: [corvette, "c5", "c6", "c7", "c8"]
+      Colorado: [colorado]
+      Trax: [trax]
+      Blazer: [blazer]
+      Trailblazer: [trailblazer, "trail blazer"]
+      Sonic: [sonic]
+      Spark: [spark]
+      Volt: [volt]
+      Bolt: [bolt ev, bolt euv]
+      Express: [express]
+      Avalanche: [avalanche]
+      HHR: [hhr]
+      Cobalt: [cobalt]
+      Aveo: [aveo]
+      Captiva: [captiva]
+      S10: [s10, "s-10"]
+      Monte Carlo: ["monte carlo"]
+
+  Chrysler:
+    aliases: [chrysler]
+    models:
+      300: ["300", "300c"]
+      Pacifica: [pacifica]
+      Town & Country: ["town & country", "town and country"]
+      Sebring: [sebring]
+      PT Cruiser: ["pt cruiser"]
+      Voyager: [voyager]
+      200: ["200"]
+
+  Dodge:
+    aliases: [dodge]
+    models:
+      Ram: [ram, "ram 1500", "ram 2500", "ram 3500"]
+      Charger: [charger]
+      Challenger: [challenger]
+      Durango: [durango]
+      Journey: [journey]
+      Grand Caravan: ["grand caravan", caravan]
+      Dart: [dart]
+      Avenger: [avenger]
+      Nitro: [nitro]
+      Magnum: [magnum]
+      Viper: [viper]
+      Dakota: [dakota]
+
+  Ford:
+    aliases: [ford]
+    models:
+      F-150: ["f150", "f-150"]
+      F-250: ["f250", "f-250"]
+      F-350: ["f350", "f-350"]
+      Super Duty: ["super duty", superduty]
+      Explorer: [explorer]
+      Escape: [escape]
+      Edge: [edge]
+      Expedition: [expedition]
+      Focus: [focus]
+      Fusion: [fusion]
+      Mustang: [mustang]
+      Ranger: [ranger]
+      Bronco: [bronco, "bronco sport"]
+      Transit: [transit, "transit connect"]
+      Taurus: [taurus]
+      Fiesta: [fiesta]
+      Flex: [flex]
+      Maverick: [maverick]
+      EcoSport: [ecosport]
+      Econoline: [econoline, "e150", "e250", "e350"]
+      Excursion: [excursion]
+      Escort: [escort]
+      Crown Victoria: ["crown victoria", "crown vic"]
+      Mach-E: ["mach-e", "mach e"]
+
+  Genesis:
+    aliases: [genesis]
+    models:
+      G70: [g70]
+      G80: [g80]
+      G90: [g90]
+      GV70: [gv70]
+      GV80: [gv80]
+
+  GMC:
+    aliases: [gmc]
+    models:
+      Sierra: [sierra]
+      Yukon: [yukon, "yukon xl", denali]
+      Acadia: [acadia]
+      Terrain: [terrain]
+      Canyon: [canyon]
+      Savana: [savana]
+      Envoy: [envoy]
+
+  Honda:
+    aliases: [honda]
+    models:
+      Accord: [accord]
+      Civic: [civic]
+      CR-V: ["cr-v", crv]
+      Pilot: [pilot]
+      Odyssey: [odyssey]
+      HR-V: ["hr-v", hrv]
+      Ridgeline: [ridgeline]
+      Fit: [fit]
+      Passport: [passport]
+      Insight: [insight]
+      Element: [element]
+      S2000: [s2000]
+      Prelude: [prelude]
+
+  Hyundai:
+    aliases: [hyundai]
+    models:
+      Elantra: [elantra]
+      Sonata: [sonata]
+      Tucson: [tucson]
+      Santa Fe: ["santa fe", "santafe"]
+      Palisade: [palisade]
+      Kona: [kona]
+      Accent: [accent]
+      Veloster: [veloster]
+      Genesis Coupe: ["genesis coupe"]
+      Azera: [azera]
+      Venue: [venue]
+      Ioniq: [ioniq]
+
+  Infiniti:
+    aliases: [infiniti, infinity]
+    models:
+      G35: [g35]
+      G37: [g37]
+      Q50: [q50]
+      Q60: [q60]
+      QX60: [qx60]
+      QX80: [qx80]
+      QX56: [qx56]
+      QX50: [qx50]
+      FX35: [fx35]
+      FX45: [fx45]
+      M37: [m37]
+      M45: [m45]
+      JX35: [jx35]
+
+  Jaguar:
+    aliases: [jaguar]
+    models:
+      XF: [xf]
+      XJ: [xj]
+      XE: [xe]
+      F-Pace: ["f-pace", fpace]
+      E-Pace: ["e-pace"]
+      F-Type: ["f-type", ftype]
+      S-Type: ["s-type"]
+      X-Type: ["x-type"]
+
+  Jeep:
+    aliases: [jeep]
+    models:
+      Wrangler: [wrangler, jk, jl, tj, yj]
+      Grand Cherokee: ["grand cherokee", wk2, wk]
+      Cherokee: [cherokee]
+      Compass: [compass]
+      Renegade: [renegade]
+      Patriot: [patriot]
+      Liberty: [liberty]
+      Gladiator: [gladiator]
+      Commander: [commander]
+
+  Kia:
+    aliases: [kia]
+    models:
+      Optima: [optima]
+      Sorento: [sorento]
+      Sportage: [sportage]
+      Soul: [soul]
+      Forte: [forte]
+      Telluride: [telluride]
+      Sedona: [sedona]
+      Rio: [rio]
+      Stinger: [stinger]
+      Niro: [niro]
+      Seltos: [seltos]
+      K5: [k5]
+      Carnival: [carnival]
+
+  Land Rover:
+    aliases: ["land rover", landrover, "range rover", rangerover]
+    models:
+      Range Rover: ["range rover"]
+      Range Rover Sport: ["range rover sport"]
+      Evoque: [evoque]
+      Velar: [velar]
+      Discovery: [discovery, lr3, lr4]
+      Defender: [defender]
+      Freelander: [freelander, lr2]
+
+  Lexus:
+    aliases: [lexus]
+    models:
+      RX: [rx, rx350, rx450h]
+      ES: [es, es350, es300]
+      IS: [is, is250, is350, is300]
+      GS: [gs, gs350, gs300]
+      LS: [ls, ls430, ls460]
+      NX: [nx, nx200t, nx300]
+      GX: [gx, gx460, gx470]
+      LX: [lx, lx570, lx470]
+      RC: [rc, rc350]
+      UX: [ux]
+      CT: [ct200h]
+      SC: [sc430]
+
+  Lincoln:
+    aliases: [lincoln]
+    models:
+      Navigator: [navigator]
+      MKZ: [mkz]
+      MKX: [mkx]
+      MKC: [mkc]
+      MKS: [mks]
+      MKT: [mkt]
+      Aviator: [aviator]
+      Corsair: [corsair]
+      Nautilus: [nautilus]
+      Continental: [continental]
+      Town Car: ["town car"]
+
+  Mazda:
+    aliases: [mazda]
+    models:
+      Mazda3: [mazda3, "mazda 3"]
+      Mazda6: [mazda6, "mazda 6"]
+      CX-5: ["cx-5", cx5]
+      CX-9: ["cx-9", cx9]
+      CX-3: ["cx-3", cx3]
+      CX-30: ["cx-30", cx30]
+      MX-5: ["mx-5", mx5, miata]
+      RX-8: ["rx-8", rx8]
+      RX-7: ["rx-7", rx7]
+      Tribute: [tribute]
+      CX-7: ["cx-7", cx7]
+
+  Mercedes-Benz:
+    aliases: ["mercedes-benz", mercedes, benz, "merc"]
+    models:
+      C-Class: ["c-class", "c class", c300, c250, c350, c63, w204, w205]
+      E-Class: ["e-class", "e class", e350, e320, e550, e63, w211, w212, w213]
+      S-Class: ["s-class", "s class", s550, s500, s450, s63, w221, w222, w220]
+      GLC: [glc, glc300]
+      GLE: [gle, ml350, ml320, "ml-class", w166]
+      GLS: [gls, gl450, gl550, "gl-class"]
+      GLA: [gla]
+      GLB: [glb]
+      GLK: [glk, glk350]
+      A-Class: ["a-class", a220]
+      CLA: [cla, cla250]
+      CLS: [cls, cls550]
+      SL: [sl, sl500, sl550]
+      SLK: [slk]
+      Sprinter: [sprinter]
+      G-Class: ["g-class", g550, g63, "g wagon", gwagon]
+      Metris: [metris]
+
+  Mercury:
+    aliases: [mercury]
+    models:
+      Grand Marquis: ["grand marquis"]
+      Mariner: [mariner]
+      Milan: [milan]
+      Mountaineer: [mountaineer]
+      Sable: [sable]
+
+  Mini:
+    aliases: [mini]
+    models:
+      Cooper: [cooper, "cooper s"]
+      Countryman: [countryman]
+      Clubman: [clubman]
+
+  Mitsubishi:
+    aliases: [mitsubishi]
+    models:
+      Outlander: [outlander, "outlander sport"]
+      Lancer: [lancer, evo, evolution]
+      Eclipse: [eclipse, "eclipse cross"]
+      Mirage: [mirage]
+      Galant: [galant]
+      Endeavor: [endeavor]
+      Montero: [montero]
+
+  Nissan:
+    aliases: [nissan, datsun]
+    models:
+      Altima: [altima]
+      Sentra: [sentra]
+      Rogue: [rogue, "rogue sport"]
+      Murano: [murano]
+      Pathfinder: [pathfinder]
+      Maxima: [maxima]
+      Frontier: [frontier]
+      Titan: [titan]
+      Versa: [versa]
+      Juke: [juke]
+      Armada: [armada]
+      Kicks: [kicks]
+      Leaf: [leaf]
+      370Z: ["370z"]
+      350Z: ["350z"]
+      GT-R: ["gt-r", gtr, r35]
+      Xterra: [xterra]
+      Quest: [quest]
+      Cube: [cube]
+      NV200: [nv200]
+      240SX: ["240sx"]
+
+  Porsche:
+    aliases: [porsche]
+    models:
+      911: ["911", "996", "997", "991", "992"]
+      Cayenne: [cayenne]
+      Macan: [macan]
+      Panamera: [panamera]
+      Boxster: [boxster, "987", "986"]
+      Cayman: [cayman]
+      Taycan: [taycan]
+
+  Ram:
+    aliases: ["ram"]
+    models:
+      1500: ["1500"]
+      2500: ["2500"]
+      3500: ["3500"]
+      ProMaster: [promaster, "promaster city"]
+
+  Subaru:
+    aliases: [subaru]
+    models:
+      Outback: [outback]
+      Forester: [forester]
+      Impreza: [impreza]
+      WRX: [wrx, sti]
+      Legacy: [legacy]
+      Crosstrek: [crosstrek, xv]
+      Ascent: [ascent]
+      BRZ: [brz]
+      Tribeca: [tribeca]
+      Baja: [baja]
+
+  Tesla:
+    aliases: [tesla]
+    models:
+      Model 3: ["model 3", model3]
+      Model S: ["model s", models]
+      Model X: ["model x"]
+      Model Y: ["model y"]
+      Cybertruck: [cybertruck]
+
+  Toyota:
+    aliases: [toyota, scion]
+    models:
+      Camry: [camry]
+      Corolla: [corolla]
+      RAV4: [rav4, "rav 4"]
+      Highlander: [highlander]
+      Tacoma: [tacoma]
+      Tundra: [tundra]
+      4Runner: ["4runner", "4 runner"]
+      Sienna: [sienna]
+      Prius: [prius, "prius c", "prius v"]
+      Avalon: [avalon]
+      Sequoia: [sequoia]
+      Land Cruiser: ["land cruiser", landcruiser]
+      Yaris: [yaris]
+      Venza: [venza]
+      C-HR: ["c-hr", chr]
+      Supra: [supra]
+      86: ["86", "gt86", frs, "fr-s", gr86]
+      Matrix: [matrix]
+      Solara: [solara]
+      Celica: [celica]
+      MR2: [mr2]
+      tC: [tc]
+      xB: [xb]
+      FJ Cruiser: ["fj cruiser", "fj"]
+
+  Volkswagen:
+    aliases: [volkswagen, vw]
+    models:
+      Jetta: [jetta]
+      Passat: [passat]
+      Golf: [golf, gti, "golf r"]
+      Tiguan: [tiguan]
+      Atlas: [atlas, "atlas cross sport"]
+      Beetle: [beetle, "new beetle"]
+      Touareg: [touareg]
+      CC: [cc]
+      Arteon: [arteon]
+      Routan: [routan]
+      Rabbit: [rabbit]
+      ID.4: ["id.4", id4]
+
+  Volvo:
+    aliases: [volvo]
+    models:
+      XC90: [xc90]
+      XC60: [xc60]
+      XC40: [xc40]
+      S60: [s60]
+      S80: [s80]
+      S90: [s90]
+      V60: [v60]
+      V70: [v70]
+      C30: [c30]

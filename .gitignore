@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Local data — never commit scraped data or reports
+data/*.db
+data/*.db-journal
+data/cache/
+out/
+*.csv
+*.html
+!tests/fixtures/*.html

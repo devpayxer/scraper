@@ -1,0 +1,12 @@
+# Core
+beautifulsoup4>=4.12
+lxml>=5.0
+PyYAML>=6.0
+
+# HTTP fetcher with browser TLS fingerprint impersonation.
+# This is what makes eBay actually answer; plain requests/urllib get 403.
+curl_cffi>=0.7
+
+# Optional: only needed for `--engine playwright` (real headless Chromium).
+#   pip install playwright && playwright install chromium
+# playwright>=1.44

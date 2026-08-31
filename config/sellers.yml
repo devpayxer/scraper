@@ -1,0 +1,24 @@
+# The seller panel. Add up to 50+ entries here; `scrape` walks the whole list.
+#
+# Only `user` is required -- it is the eBay username that goes into `_ssn=`.
+# Optional keys:
+#   store    : storefront slug (`store_name=`). Cosmetic; eBay accepts _ssn alone.
+#   label    : friendly name for reports.
+#   category : eBay category id to constrain to (default comes from settings.yml).
+#              6028 = eBay Motors > Parts & Accessories > Car & Truck Parts
+#   enabled  : set false to park a seller without deleting it.
+#
+# Find more sellers to add with:
+#   python -m ebayparts discover --category 6028 --pages 15
+# which walks category search results and ranks the sellers that show up most.
+# Then paste the winners in here.
+
+sellers:
+  - user: spartan_auto
+    store: spartautoparts
+    label: Spartan Auto Parts
+    enabled: true
+
+  # - user: another_seller
+  #   label: Another Recycler
+  #   enabled: true
