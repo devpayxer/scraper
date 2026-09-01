@@ -38,12 +38,53 @@ letting the database grow.
 
 ---
 
+## Where to run it
+
+**On a normal home PC or laptop, on residential internet. Not on a VPS.**
+
+This is counterintuitive, so it is worth being blunt: eBay blocks datacenter IP
+ranges hard, and every cheap VPS (DigitalOcean, Hetzner, AWS Lightsail, Contabo)
+lives in exactly those ranges. A VPS buys you uptime and costs you the thing that
+makes the tool work. The container this repo was developed in is effectively a
+VPS, and eBay 403s it on every request, browser or not.
+
+You do not need a machine that is always on. eBay serves the **whole 90-day sold
+history on every request**, so a run that happens weekly captures the same data
+as one that happens nightly. Your PC being asleep costs you nothing as long as
+you run it at least every couple of months.
+
 ## Install
+
+### Windows
+
+```bat
+py -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+
+.venv\Scripts\python -m ebayparts scrape --max-pages 2
+.venv\Scripts\python -m ebayparts report
+start out\report.html
+```
+
+Use **Windows Terminal or PowerShell**, not the old `cmd.exe`. (The tool forces
+UTF-8 on its own output so it survives `cmd.exe`'s cp437 code page, but the
+modern terminal is nicer anyway.)
+
+To run it on a schedule, point Task Scheduler at `scripts\run_windows.bat`:
+
+* **Program/script**: `C:\Users\you\scraper\scripts\run_windows.bat`
+* **Start in**: `C:\Users\you\scraper` ← required, or relative paths break
+* Tick **"Run task as soon as possible after a scheduled start is missed"** so a
+  sleeping PC just catches up on the next boot.
+
+### macOS / Linux
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+### Either way
 
 `curl_cffi` matters: it impersonates a real Chrome TLS fingerprint. Plain
 `requests`/`urllib` get a flat 403 from eBay.
@@ -115,7 +156,7 @@ Only `user` is required — it is what goes into eBay's `_ssn=` parameter.
 | `parse-file` | Parse a **saved HTML page** offline. `--debug` shows every field, `--save` stores it |
 | `reindex` | Re-derive make/model/part type from stored titles after editing the taxonomies |
 | `report` | Write `out/report.html`; `--csv` and `--json` for the tables |
-| `export` | Dump raw sold rows (title, price, shipping, date, …) to CSV |
+| `export` | Dump raw sold rows (title, price, shipping, date, …) to CSV. Written with a BOM so Excel on Windows reads them correctly |
 | `top --by category\|make\|model\|generation\|combo\|year\|group\|seller` | Ranking table in the terminal. `--min N` sets the minimum sales per bucket (default 2 for model/generation/combo, 1 elsewhere) |
 | `hot --by category\|make\|model\|generation` | Momentum: last 30 days vs the 30 before |
 | `stats` | Row counts, date span, taxonomy coverage, recent runs |
@@ -219,6 +260,9 @@ Both `data/` and `out/` are gitignored — scraped data stays local.
 ---
 
 ## Running it on a schedule
+
+On Windows use `scripts\run_windows.bat` with Task Scheduler (see **Install**).
+On macOS/Linux:
 
 ```cron
 # nightly at 03:15, then refresh the report

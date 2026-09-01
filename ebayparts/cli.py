@@ -19,6 +19,20 @@ log = logging.getLogger("ebayparts")
 
 # --------------------------------------------------------------- utilities
 
+def configure_console() -> None:
+    """Force UTF-8 on stdout/stderr.
+
+    Windows consoles still default to a legacy code page (cp1252), and this tool
+    prints em dashes and middots. Without this, `top` and `stats` die with
+    UnicodeEncodeError -- and worse, so does a scrape that is hours in.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError, ValueError):
+            pass  # redirected to a pipe that cannot be reconfigured; harmless
+
+
 def setup_logging(verbose: bool) -> None:
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
@@ -383,6 +397,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_console()
     parser = build_parser()
     args = parser.parse_args(argv)
     setup_logging(args.verbose)

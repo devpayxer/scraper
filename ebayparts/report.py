@@ -219,7 +219,9 @@ def write_csvs(report: Report, directory: Path | str) -> list[Path]:
         if not rows:
             continue
         path = directory / f"{name}.csv"
-        with path.open("w", newline="", encoding="utf-8") as fh:
+        # utf-8-sig: Excel on Windows assumes cp1252 for a BOM-less UTF-8 file
+        # and renders "Vehicle x part" keys as mojibake.
+        with path.open("w", newline="", encoding="utf-8-sig") as fh:
             writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
             writer.writeheader()
             writer.writerows(rows)
@@ -257,7 +259,7 @@ def export_listings(store, path: Path | str, *, days: int | None = 90,
     sql += " ORDER BY sold_date DESC, item_id"
 
     rows = store.query(sql, params)
-    with path.open("w", newline="", encoding="utf-8") as fh:
+    with path.open("w", newline="", encoding="utf-8-sig") as fh:
         writer = csv.writer(fh)
         if rows:
             writer.writerow(rows[0].keys())
