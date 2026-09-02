@@ -108,6 +108,31 @@ DERIVED_COLUMNS = [
 ]
 
 
+# Staleness bands, as fractions of the sold-history window eBay publishes.
+# Crossing the last one is the only failure mode in this design that loses data
+# permanently: eBay drops sales at ~90 days, so a seller left unvisited that
+# long has sales that no longer exist anywhere to be collected.
+STALENESS_BANDS = (
+    (0.50, "ok"),        # < 45 days on a 90-day window
+    (0.80, "stale"),     # 45-72 days: rotation has drifted, worth a look
+    (1.00, "at risk"),   # 72-90 days: the oldest sales are about to expire
+)
+
+
+def staleness_status(days_since: int | None, lookback_days: int = 90) -> str:
+    """Classify how overdue a seller is.
+
+    `None` means never successfully visited -- normal before the first
+    backfill, which is why it is reported as "pending" rather than a problem.
+    """
+    if days_since is None:
+        return "pending"
+    for fraction, label in STALENESS_BANDS:
+        if days_since < lookback_days * fraction:
+            return label
+    return "gap"  # past the window; those sales are gone from eBay for good
+
+
 def row_key(listing: Listing) -> str:
     """Stable identity for one sale.
 
@@ -248,6 +273,35 @@ class Store:
                 (seller, now, now if status == "ok" else None, pages, new_rows,
                  seller, done, blocks),
             )
+
+    def coverage_report(self, users: list[str], *, lookback_days: int = 90,
+                        today: dt.date | None = None) -> list[dict[str, Any]]:
+        """Days since each seller was last *successfully* collected.
+
+        Deliberately keyed on last_success_at, not last_attempt_at: a seller
+        that gets attempted and blocked every run is not being collected, and
+        reporting it as fresh would hide exactly the drift this is here to catch.
+        """
+        today = today or dt.date.today()
+        states = {r["seller"]: r for r in self.query("SELECT * FROM seller_state")}
+        report = []
+        for user in users:
+            state = states.get(user)
+            success = state["last_success_at"] if state else None
+            days = None
+            if success:
+                days = (today - dt.date.fromisoformat(success[:10])).days
+            report.append({
+                "seller": user,
+                "last_success": success[:10] if success else None,
+                "days_since": days,
+                "status": staleness_status(days, lookback_days),
+                "rows": state["total_rows"] if state else 0,
+                "blocks": state["consecutive_blocks"] if state else 0,
+            })
+        order = {"gap": 0, "at risk": 1, "stale": 2, "pending": 3, "ok": 4}
+        report.sort(key=lambda r: (order[r["status"]], -(r["days_since"] or 0)))
+        return report
 
     def sellers_by_staleness(self, users: list[str]) -> list[str]:
         """Least-recently-visited first, never-visited before that.

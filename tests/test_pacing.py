@@ -200,3 +200,84 @@ class TestStopConditions:
         assert results[-1].status == "blocked"
         assert len(results) == 1, "the run should stop, not move to the next seller"
         assert len(fake.requested) == 2, "no retry into a refusal"
+
+
+class TestStaleness:
+    def test_bands(self):
+        from ebayparts.store import staleness_status
+        assert staleness_status(None) == "pending"
+        assert staleness_status(0) == "ok"
+        assert staleness_status(44) == "ok"
+        assert staleness_status(45) == "stale"
+        assert staleness_status(71) == "stale"
+        assert staleness_status(72) == "at risk"
+        assert staleness_status(89) == "at risk"
+        assert staleness_status(90) == "gap"
+        assert staleness_status(400) == "gap"
+
+    def test_bands_scale_with_the_window(self):
+        from ebayparts.store import staleness_status
+        # a 30-day window: ok < 15, stale 15-24, at risk 24-30, gap >= 30
+        assert staleness_status(14, lookback_days=30) == "ok"
+        assert staleness_status(20, lookback_days=30) == "stale"
+        assert staleness_status(29, lookback_days=30) == "at risk"
+        assert staleness_status(30, lookback_days=30) == "gap"
+
+    def test_report_uses_last_success_not_last_attempt(self, store):
+        """A seller blocked every run is NOT fresh, however often it is tried."""
+        store.mark_seller_attempt("blocked_one", pages=0, new_rows=0, status="blocked")
+        report = {r["seller"]: r for r in store.coverage_report(["blocked_one"])}
+        assert report["blocked_one"]["status"] == "pending"
+        assert report["blocked_one"]["last_success"] is None
+
+    def test_report_flags_a_drifted_seller(self, store):
+        store.mark_seller_attempt("old", pages=1, new_rows=1, status="ok")
+        store.conn.execute(
+            "UPDATE seller_state SET last_success_at = ? WHERE seller = 'old'",
+            ((dt.date.today() - dt.timedelta(days=100)).isoformat() + "T12:00:00",),
+        )
+        store.conn.commit()
+        row = store.coverage_report(["old"])[0]
+        assert row["days_since"] == 100
+        assert row["status"] == "gap"
+
+    def test_report_sorts_worst_first(self, store):
+        for name, days in [("fresh", 1), ("lost", 120), ("edge", 80), ("drifting", 50)]:
+            store.mark_seller_attempt(name, pages=1, new_rows=1, status="ok")
+            store.conn.execute(
+                "UPDATE seller_state SET last_success_at = ? WHERE seller = ?",
+                ((dt.date.today() - dt.timedelta(days=days)).isoformat() + "T12:00:00",
+                 name),
+            )
+        store.conn.commit()
+        order = [r["seller"] for r in
+                 store.coverage_report(["fresh", "lost", "edge", "drifting"])]
+        assert order == ["lost", "edge", "drifting", "fresh"]
+
+    def test_consecutive_blocks_are_counted(self, store):
+        for _ in range(3):
+            store.mark_seller_attempt("x", pages=0, new_rows=0, status="blocked")
+        assert store.coverage_report(["x"])[0]["blocks"] == 3
+        store.mark_seller_attempt("x", pages=1, new_rows=2, status="ok")
+        assert store.coverage_report(["x"])[0]["blocks"] == 0
+
+    def test_a_permanently_blocked_seller_is_surfaced(self, store, capsys):
+        """It never succeeds, so it stays "pending" -- it must still be flagged."""
+        from ebayparts.cli import print_coverage_warnings
+
+        for _ in range(4):
+            store.mark_seller_attempt("wall", pages=0, new_rows=0, status="blocked")
+        report = store.coverage_report(["wall"])
+        assert report[0]["status"] == "pending"
+
+        print_coverage_warnings(report, lookback_days=90)
+        out = capsys.readouterr().out
+        assert "wall" in out
+        assert "blocked" in out
+
+    def test_healthy_panel_prints_nothing(self, store, capsys):
+        from ebayparts.cli import print_coverage_warnings
+
+        store.mark_seller_attempt("good", pages=1, new_rows=1, status="ok")
+        print_coverage_warnings(store.coverage_report(["good"]), lookback_days=90)
+        assert capsys.readouterr().out == ""

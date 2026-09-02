@@ -55,6 +55,38 @@ trying to look human, this collector *asks for less*:
 Steady state after backfill is roughly **10–20 pages per day, a few minutes** —
 comparable to one person idly checking a few storefronts.
 
+### Coverage warnings
+
+The one way this design can lose data permanently: eBay drops sales at ~90 days,
+so a seller left unvisited that long has sales that no longer exist to collect.
+Rotation makes that unlikely (a 50-seller panel comes round every ~9 runs, well
+inside the window), but a PC switched off for months, or a seller that gets
+blocked every single run, would drift there quietly.
+
+So `plan` and `stats` both flag it:
+
+```
+Coverage warnings:
+  seller           last collected  days ago  rows   status
+  --------------------------------------------------------
+  gulf_salvage         2026-05-21       104  4,102      gap
+  midwest_oem          2026-06-16        78  2,880  at risk
+  atx_used_parts       2026-07-12        52  1,455    stale
+  rocky_mtn_parts               -         -      0  pending
+
+  1 seller(s) have not been collected in 90+ days. eBay has already dropped
+  the sales from that gap -- they cannot be recovered by scraping harder now.
+```
+
+Bands scale with `lookback_days`: **ok** under half the window, **stale** past
+half, **at risk** past 80%, **gap** past the whole thing. A seller blocked 3+
+runs in a row is flagged too — it is being attempted but never actually
+collected, which a staleness check alone would miss.
+
+Nothing here is measured on attempts. It is measured on *successful* collection,
+because a seller that gets tried and refused every run is not being collected,
+however busy the log looks.
+
 See exactly what a run would do, without touching the network:
 
 ```bash

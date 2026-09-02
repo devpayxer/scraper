@@ -136,6 +136,42 @@ def cmd_scrape(args, settings: Settings) -> int:
     return 0
 
 
+COVERAGE_COLUMNS = [
+    ("seller", "seller"), ("last collected", "last_success"),
+    ("days ago", "days_since"), ("rows", "rows"), ("status", "status"),
+]
+
+
+def print_coverage_warnings(report: list[dict], lookback_days: int) -> None:
+    """Surface sellers drifting toward the edge of eBay's 90-day window."""
+    # A seller blocked run after run is never collected, so it stays "pending"
+    # forever and would otherwise slip past a staleness-only filter.
+    problems = [r for r in report
+                if r["status"] in ("stale", "at risk", "gap") or r["blocks"] >= 3]
+    if not problems:
+        return
+
+    print("\nCoverage warnings:")
+    print_table(problems, COVERAGE_COLUMNS, limit=len(problems))
+
+    gaps = [r for r in problems if r["status"] == "gap"]
+    at_risk = [r for r in problems if r["status"] == "at risk"]
+    if gaps:
+        print(f"\n  {len(gaps)} seller(s) have not been collected in "
+              f"{lookback_days}+ days. eBay has already dropped the sales from "
+              f"that gap -- they cannot be recovered by scraping harder now. "
+              f"Run again to resume from today.")
+    if at_risk:
+        print(f"\n  {len(at_risk)} seller(s) are close to the {lookback_days}-day "
+              f"edge. Run soon, or raise sellers_per_run so the rotation comes "
+              f"round faster.")
+    blocked = [r for r in problems if r["blocks"] >= 3]
+    if blocked:
+        print(f"\n  {len(blocked)} seller(s) have been blocked "
+              f"{max(r['blocks'] for r in blocked)}+ runs in a row -- they are "
+              f"being attempted but never collected.")
+
+
 def cmd_plan(args, settings: Settings) -> int:
     """Show what the next run would do. Touches nothing on the network."""
     mode = args.mode or settings.mode
@@ -149,6 +185,8 @@ def cmd_plan(args, settings: Settings) -> int:
         queue = order[: pacing.sellers_per_run]
         states = {u: store.get_seller_state(u) for u in order}
         history = store.fetch_history(days=7)
+        coverage_rows = store.coverage_report(
+            [s.user for s in sellers], lookback_days=settings.lookback_days)
 
     start, end = pacing.active_hours
     ok_hours = pacing.within_active_hours(now)
@@ -190,6 +228,8 @@ def cmd_plan(args, settings: Settings) -> int:
         print_table([dict(r) for r in history],
                     [("day", "day"), ("pages", "pages"), ("blocked", "blocked")],
                     limit=7)
+
+    print_coverage_warnings(coverage_rows, settings.lookback_days)
     return 0
 
 
@@ -351,6 +391,10 @@ def cmd_stats(args, settings: Settings) -> int:
             "SELECT seller, finished_at, pages, rows_found, rows_new, status "
             "FROM scrape_runs ORDER BY id DESC LIMIT 10"
         )
+        panel = [s.user for s in load_sellers() if s.enabled]
+        coverage_rows = store.coverage_report(
+            panel, lookback_days=settings.lookback_days)
+        budget_used = store.pages_fetched_today()
 
     print(f"\nDatabase : {settings.resolve('database')}")
     print(f"Rows     : {total:,}  ({span[0] or '-'} to {span[1] or '-'})")
@@ -362,12 +406,23 @@ def cmd_stats(args, settings: Settings) -> int:
               f"${stats['revenue']:,.2f} revenue, median ${stats['median_price']:,.2f}")
         print(f"Recognised: make {cov['with_make_pct']}% · model {cov['with_model_pct']}% "
               f"· part type {cov['with_category_pct']}% · date {cov['with_date_pct']}%")
+    pacing = settings.pacing()
+    print(f"Today    : {budget_used}/{pacing.daily_page_budget} pages fetched")
+
+    if coverage_rows:
+        counts: dict[str, int] = {}
+        for row in coverage_rows:
+            counts[row["status"]] = counts.get(row["status"], 0) + 1
+        print("Coverage : " + " · ".join(f"{v} {k}" for k, v in counts.items()))
+
     if runs:
         print("\nRecent runs:")
         print_table([dict(r) for r in runs],
                     [("seller", "seller"), ("finished", "finished_at"), ("pages", "pages"),
                      ("rows", "rows_found"), ("new", "rows_new"), ("status", "status")],
                     limit=10)
+
+    print_coverage_warnings(coverage_rows, settings.lookback_days)
     return 0
 
 
