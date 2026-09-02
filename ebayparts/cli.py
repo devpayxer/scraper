@@ -11,7 +11,7 @@ from . import __version__
 from .analyze import build_report, coverage, group_by, load_rows, momentum, price_stats
 from .config import ROOT, Settings, load_sellers
 from .report import export_listings, write_csvs, write_html, write_json
-from .scrape import discover_sellers, scrape_all
+from .scrape import DayBudget, discover_sellers, scrape_all
 from .store import Store
 
 log = logging.getLogger("ebayparts")
@@ -100,15 +100,22 @@ def cmd_scrape(args, settings: Settings) -> int:
     if since is None and args.days:
         since = dt.date.today() - dt.timedelta(days=args.days)
 
-    print(f"Scraping {len(sellers)} seller(s) via {args.engine or settings.engine}; "
-          f"~{settings.delay_seconds:.0f}-{settings.delay_seconds + settings.delay_jitter:.0f}s "
+    mode = args.mode or settings.mode
+    pacing = settings.pacing(mode)
+    print(f"Mode {mode}: up to {pacing.sellers_per_run} seller(s) this run, "
+          f"{pacing.daily_page_budget} pages/day, "
+          f"{pacing.delay_seconds:.0f}-{pacing.delay_seconds + pacing.delay_jitter:.0f}s "
           f"between pages.")
     with open_store(settings) as store:
         results = scrape_all(
-            sellers, settings, store,
+            sellers, settings, store, mode=mode,
             max_pages=args.max_pages, since=since,
             use_cache=not args.no_cache, engine=args.engine,
+            ignore_hours=args.ignore_hours,
         )
+        if not results:
+            print("Nothing to do this run -- see the message above.")
+            return 0
         print("\nDone.")
         print_table(
             [{"key": r.seller, "pages": r.pages, "rows": r.rows_found,
@@ -119,11 +126,70 @@ def cmd_scrape(args, settings: Settings) -> int:
         )
         print(f"\nDatabase now holds {store.count():,} sold rows "
               f"({' to '.join(str(d) for d in store.date_span())}).")
+        budget = DayBudget(store, pacing.daily_page_budget)
+        print(f"Pages fetched today: {budget.used}/{budget.limit}.")
         blocked = [r for r in results if r.status == "blocked"]
         if blocked:
-            print(f"\n{len(blocked)} seller(s) hit a block. Slow down "
-                  f"(raise delay_seconds in config/settings.yml) or try "
-                  f"--engine playwright.", file=sys.stderr)
+            print(f"\neBay refused a request. The run stopped rather than pushing. "
+                  f"Leave it until tomorrow; if it repeats, raise delay_seconds and "
+                  f"lower sellers_per_run in config/settings.yml.", file=sys.stderr)
+    return 0
+
+
+def cmd_plan(args, settings: Settings) -> int:
+    """Show what the next run would do. Touches nothing on the network."""
+    mode = args.mode or settings.mode
+    pacing = settings.pacing(mode)
+    sellers = [s for s in load_sellers() if s.enabled]
+    now = dt.datetime.now()
+
+    with open_store(settings) as store:
+        budget = DayBudget(store, pacing.daily_page_budget, now.date())
+        order = store.sellers_by_staleness([s.user for s in sellers])
+        queue = order[: pacing.sellers_per_run]
+        states = {u: store.get_seller_state(u) for u in order}
+        history = store.fetch_history(days=7)
+
+    start, end = pacing.active_hours
+    ok_hours = pacing.within_active_hours(now)
+
+    print(f"\nMode           : {mode}")
+    print(f"Panel          : {len(sellers)} seller(s), {pacing.sellers_per_run} per run "
+          f"-> full sweep every {-(-len(sellers) // max(1, pacing.sellers_per_run))} run(s)")
+    print(f"Pages          : up to {pacing.pages_per_seller}/seller, "
+          f"stops after {pacing.pages_without_new} page(s) with nothing new")
+    print(f"Gap            : {pacing.delay_seconds:.0f}-"
+          f"{pacing.delay_seconds + pacing.delay_jitter:.0f}s, plus a "
+          f"{pacing.long_pause_seconds:.0f}s break every {pacing.long_pause_every} pages")
+    print(f"Active hours   : {start:02d}:00-{end:02d}:00 "
+          f"({'now inside' if ok_hours else 'NOW OUTSIDE -- run would decline'})")
+    print(f"Budget today   : {budget.used}/{budget.limit} used, {budget.remaining} left")
+
+    worst = pacing.sellers_per_run * pacing.pages_per_seller
+    worst = min(worst, budget.remaining)
+    est_min = worst * (pacing.delay_seconds + pacing.delay_jitter / 2) / 60
+    print(f"This run       : at most {worst} page(s), roughly {est_min:.0f} min")
+
+    print("\nNext up (least recently visited first):")
+    rows = []
+    for user in queue:
+        state = states.get(user)
+        rows.append({
+            "seller": user,
+            "last visit": (state["last_attempt_at"][:16].replace("T", " ")
+                           if state and state["last_attempt_at"] else "never"),
+            "rows": state["total_rows"] if state else 0,
+            "new last time": state["last_new_rows"] if state else "-",
+        })
+    print_table(rows, [("seller", "seller"), ("last visit", "last visit"),
+                       ("rows held", "rows"), ("new last time", "new last time")],
+                limit=len(rows))
+
+    if history:
+        print("\nPages fetched, recent days:")
+        print_table([dict(r) for r in history],
+                    [("day", "day"), ("pages", "pages"), ("blocked", "blocked")],
+                    limit=7)
     return 0
 
 
@@ -336,7 +402,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--since", help="skip sales before this ISO date")
     p.add_argument("--no-cache", action="store_true", help="ignore the page cache")
     p.add_argument("--engine", choices=["curl_cffi", "playwright"])
+    p.add_argument("--mode", choices=["passive", "backfill"],
+                   help="pacing profile (default from settings.yml)")
+    p.add_argument("--ignore-hours", action="store_true",
+                   help="run even outside the configured active hours")
     p.set_defaults(func=cmd_scrape)
+
+    p = sub.add_parser("plan", help="show what the next run would do; touches nothing")
+    p.add_argument("--mode", choices=["passive", "backfill"])
+    p.set_defaults(func=cmd_plan)
 
     p = sub.add_parser("discover", help="find high-volume sellers to add to the panel")
     p.add_argument("--category", type=int, help="eBay category id (default from settings)")

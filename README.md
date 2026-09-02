@@ -25,16 +25,79 @@ automated traffic. Two things follow:
    something you rely on, apply for it. The
    [Browse API](https://developer.ebay.com/api-docs/buy/browse/overview.html) is
    open but only covers *active* listings, so it cannot answer "what sold".
-2. **If you scrape anyway, do it small and slow.** This tool defaults to one
-   page every 6–10 seconds, single-threaded, with an aggressive on-disk cache so
-   a re-run costs nothing. Those defaults exist for a reason — leave them alone.
-   There is no proxy rotation and no CAPTCHA solving here by design; if eBay
-   blocks you, the answer is to slow down or use the API, not to hide harder.
+2. **If you scrape anyway, ask for as little as possible.** That is what the
+   pacing design below is for.
 
 Also note: **eBay only publishes ~90 days of sold history**, which happens to be
 exactly the window you asked for. There is no way to reach further back through
 search — anything longer has to be accumulated by running this on a schedule and
 letting the database grow.
+
+---
+
+## How this stays quiet
+
+The thing that gets traffic flagged is **volume and rhythm**, not headers. A
+naive sweep of 50 sellers × 40 pages is 2,000 requests in one burst; no person
+browses like that, and no amount of header tuning disguises it. So instead of
+trying to look human, this collector *asks for less*:
+
+| | |
+|---|---|
+| **Daily budget** | A hard cap (default **80 pages/day**) counted in the database, so two runs on the same day cannot double the traffic |
+| **Seller rotation** | Each run touches **6 sellers**, least-recently-visited first. A 50-seller panel comes round over ~8 runs |
+| **Incremental stop** | A seller is dropped after **2 pages with nothing new**. Once backfilled, a daily check is 1–2 pages per seller |
+| **Uneven gaps** | **25–60s** between pages, plus a ~4 min break every 12 pages |
+| **Waking hours** | Runs only between **08:00–23:00** local; outside that it declines and exits |
+| **Stops on refusal** | One 403 ends the day. It never retries into a wall |
+| **Cache** | Re-runs and re-parses never re-fetch |
+
+Steady state after backfill is roughly **10–20 pages per day, a few minutes** —
+comparable to one person idly checking a few storefronts.
+
+See exactly what a run would do, without touching the network:
+
+```bash
+python -m ebayparts plan
+```
+
+```
+Mode           : passive
+Panel          : 50 seller(s), 6 per run -> full sweep every 9 run(s)
+Pages          : up to 3/seller, stops after 2 page(s) with nothing new
+Gap            : 25-60s, plus a 240s break every 12 pages
+Active hours   : 08:00-23:00 (now inside)
+Budget today   : 12/80 used, 68 left
+This run       : at most 18 page(s), roughly 13 min
+```
+
+### The first 90-day pull
+
+The initial backfill is the only heavy part, and it is spread over days rather
+than done in one sitting:
+
+```bash
+python -m ebayparts scrape --mode backfill    # run once a day until it settles
+```
+
+Each run spends its budget, remembers where it stopped, and resumes tomorrow.
+With 50 sellers expect roughly a week to fill in. There is no rush — eBay serves
+the same 90-day window whenever you next ask, so a slow backfill loses nothing
+except the wait.
+
+Then leave it on `passive` (the default) forever.
+
+### What this deliberately does *not* do
+
+No proxy rotation, no user-agent churn, no CAPTCHA solving, no headless-browser
+stealth patches. Those are evasion rather than restraint — they raise the stakes
+if anyone does look, and they do nothing about the volume that would attract the
+look in the first place. The one concession is `curl_cffi`'s Chrome TLS
+fingerprint, without which eBay refuses even a single request.
+
+If you get blocked anyway, the honest read is that eBay does not want this
+traffic. Raise the delays, cut `sellers_per_run`, or move to the official API —
+do not reach for a proxy pool.
 
 ---
 
@@ -151,7 +214,8 @@ Only `user` is required — it is what goes into eBay's `_ssn=` parameter.
 
 | Command | What it does |
 |---|---|
-| `scrape` | Walk each seller's sold listings and store them. `--sellers a,b`, `--max-pages N`, `--days 90`, `--no-cache`, `--engine playwright` |
+| `scrape` | One paced run: a few sellers, a capped number of pages. `--mode backfill` for the initial pull, `--sellers a,b`, `--max-pages N`, `--ignore-hours`, `--no-cache`, `--engine playwright` |
+| `plan` | Show what the next run would do — budget, queue, timing. Touches nothing |
 | `discover` | Rank sellers by how often they appear in category-wide sold results |
 | `parse-file` | Parse a **saved HTML page** offline. `--debug` shows every field, `--save` stores it |
 | `reindex` | Re-derive make/model/part type from stored titles after editing the taxonomies |
@@ -265,10 +329,13 @@ On Windows use `scripts\run_windows.bat` with Task Scheduler (see **Install**).
 On macOS/Linux:
 
 ```cron
-# nightly at 03:15, then refresh the report
-15 3 * * *  cd ~/scraper && .venv/bin/python -m ebayparts scrape >> scrape.log 2>&1
-45 5 * * *  cd ~/scraper && .venv/bin/python -m ebayparts report --csv >> scrape.log 2>&1
+# one paced run mid-morning, report after. Keep it inside active_hours --
+# a 03:15 cron would simply decline to run.
+20 10 * * *  cd ~/scraper && .venv/bin/python -m ebayparts scrape >> scrape.log 2>&1
+50 10 * * *  cd ~/scraper && .venv/bin/python -m ebayparts report --csv >> scrape.log 2>&1
 ```
+
+Once a day is plenty, and missing days costs nothing.
 
 Past ~90 days the database becomes more valuable than eBay's own search, since
 it holds history eBay has already dropped.

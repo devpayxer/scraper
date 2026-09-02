@@ -12,19 +12,53 @@ lookback_days: 90
 
 # ------------------------------------------------------------------ paging
 items_per_page: 240        # eBay accepts 60 / 120 / 240
-max_pages_per_seller: 40   # hard stop; 40 * 240 = 9600 rows per seller
+max_pages_per_seller: 40   # hard ceiling, only reachable in backfill mode
 stop_on_empty_page: true
 
-# ------------------------------------------------------------------ politeness
-# Be a good citizen. These defaults are deliberately slow: one page every
-# ~6-10s means a 50-seller sweep takes hours, and that is fine -- run it
-# nightly on a cron, not interactively. Do not lower these to hammer eBay.
-delay_seconds: 6.0         # base delay between page requests
-delay_jitter: 4.0          # random 0..N extra seconds on top
+# =========================================================================
+# PACING -- the part that decides whether you get blocked
+# =========================================================================
+# What gets an account or IP flagged is volume and rhythm, not headers. A
+# person browsing eBay looks at a few dozen pages, in bursts, during waking
+# hours, with uneven gaps. So that is what this does.
+#
+# mode: passive  -- the default. A small daily budget, a handful of sellers
+#                   per run, and it stops as soon as it recognises sales it
+#                   already has. After the first backfill a run is typically
+#                   10-20 pages and a few minutes.
+# mode: backfill -- deeper paging for the initial 90-day pull. Still budgeted,
+#                   still slow; it just keeps going until the budget is spent
+#                   and picks up where it left off tomorrow.
+mode: passive
+
+passive:
+  daily_page_budget: 80      # hard cap on pages fetched per calendar day
+  sellers_per_run: 6         # how many sellers one run touches
+  pages_per_seller: 3        # normal incremental depth
+  pages_without_new: 2       # stop this seller after N pages with nothing new
+  delay_seconds: 25          # base gap between pages
+  delay_jitter: 35           # so real gaps land between 25s and 60s
+  long_pause_every: 12       # after N pages, take a proper break
+  long_pause_seconds: 240
+  active_hours: [8, 23]      # local hours; outside this the run declines to start
+  stop_on_first_block: true  # one refusal ends the day. Do not retry into a wall.
+
+backfill:
+  daily_page_budget: 160
+  sellers_per_run: 10
+  pages_per_seller: 40
+  pages_without_new: 3
+  delay_seconds: 20
+  delay_jitter: 25
+  long_pause_every: 15
+  long_pause_seconds: 300
+  active_hours: [8, 23]
+  stop_on_first_block: true
+
+# ------------------------------------------------------------------ network
 timeout_seconds: 45
-max_retries: 3
-retry_backoff: 5.0         # seconds, doubled each retry
-pause_on_block_seconds: 900  # on a 403/captcha, sleep this long before resuming
+max_retries: 2
+retry_backoff: 20.0          # seconds, doubled each retry
 
 # ------------------------------------------------------------------ fetching
 # curl_cffi -> impersonates a real Chrome TLS fingerprint (recommended)

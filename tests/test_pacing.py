@@ -1,0 +1,202 @@
+"""Tests for the passive-collection guarantees: budget, rotation, early stop.
+
+These are the properties that keep request volume low, so they are the ones
+worth pinning down.
+"""
+from __future__ import annotations
+
+import datetime as dt
+
+import pytest
+
+from ebayparts.config import Pacing, Seller, Settings
+from ebayparts.fetch import BlockedError, Response
+from ebayparts.parse import parse_search_page
+from ebayparts.scrape import BudgetExhausted, DayBudget, scrape_all, scrape_seller
+from ebayparts.store import Store
+
+TODAY = dt.date(2026, 9, 2)
+CARD = """
+<li class="s-item"><div class="s-item__wrapper">
+  <a class="s-item__link" href="https://www.ebay.com/itm/{item_id}">
+    <h3 class="s-item__title">{title}</h3></a>
+  <div class="s-item__caption"><span class="s-item__caption--signal">Sold  Sep 1, 2026</span></div>
+  <div class="s-item__subtitle"><span class="SECONDARY_INFO">Pre-Owned</span></div>
+  <span class="s-item__price">${price}</span>
+  <span class="s-item__shipping">+$10.00 delivery</span>
+  <span class="s-item__seller-info-text">testseller 99.8% positive (1K)</span>
+</div></li>"""
+
+
+def page_html(start_id: int, count: int = 5) -> str:
+    cards = "".join(
+        CARD.format(item_id=300000000000 + start_id + i,
+                    title=f"2015-2018 FORD F-150 LEFT HEADLIGHT OEM #{start_id + i}",
+                    price=100 + i)
+        for i in range(count)
+    )
+    return f"<html><body><ul class='srp-results'>{cards}</ul></body></html>"
+
+
+class FakeFetcher:
+    """Serves a distinct page per _pgn, and records every URL asked for."""
+
+    def __init__(self, *, pages: int = 10, block_at: int | None = None):
+        self.requested: list[str] = []
+        self.pages = pages
+        self.block_at = block_at
+        self.pages_fetched = 0
+
+    def get(self, url: str) -> Response:
+        self.requested.append(url)
+        if self.block_at is not None and len(self.requested) >= self.block_at:
+            raise BlockedError("simulated block")
+        page = int(url.split("_pgn=")[1].split("&")[0])
+        if page > self.pages:
+            return Response(url=url, html="<html><body></body></html>")
+        self.pages_fetched += 1
+        return Response(url=url, html=page_html(start_id=page * 100))
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        pass
+
+
+@pytest.fixture
+def settings():
+    return Settings.load()
+
+
+@pytest.fixture
+def store(tmp_path):
+    with Store(tmp_path / "pacing.db") as s:
+        yield s
+
+
+class TestDayBudget:
+    def test_counts_across_separate_runs(self, store):
+        for _ in range(5):
+            store.record_fetch("a", "http://x", "ok")
+        budget = DayBudget(store, limit=10, today=dt.date.today())
+        assert budget.used == 5
+        assert budget.remaining == 5
+
+    def test_cache_hits_do_not_count(self, store):
+        store.record_fetch("a", "http://x", "ok")
+        store.record_fetch("a", "http://y", "cached")
+        assert DayBudget(store, limit=10).used == 1
+
+    def test_spending_past_the_limit_raises(self, store):
+        budget = DayBudget(store, limit=2)
+        budget.spend()
+        with pytest.raises(BudgetExhausted):
+            budget.spend()
+
+    def test_check_raises_when_exhausted(self, store):
+        for _ in range(3):
+            store.record_fetch("a", "http://x", "ok")
+        with pytest.raises(BudgetExhausted):
+            DayBudget(store, limit=3).check()
+
+
+class TestActiveHours:
+    def test_inside(self):
+        pacing = Pacing(active_hours=(8, 23))
+        assert pacing.within_active_hours(dt.datetime(2026, 9, 2, 10, 0))
+
+    def test_outside(self):
+        pacing = Pacing(active_hours=(8, 23))
+        assert not pacing.within_active_hours(dt.datetime(2026, 9, 2, 3, 0))
+
+    def test_window_crossing_midnight(self):
+        pacing = Pacing(active_hours=(22, 6))
+        assert pacing.within_active_hours(dt.datetime(2026, 9, 2, 23, 0))
+        assert pacing.within_active_hours(dt.datetime(2026, 9, 2, 2, 0))
+        assert not pacing.within_active_hours(dt.datetime(2026, 9, 2, 12, 0))
+
+    def test_run_declines_outside_hours(self, settings, store, monkeypatch):
+        fake = FakeFetcher()
+        monkeypatch.setattr("ebayparts.scrape.Fetcher", lambda *a, **k: fake)
+        results = scrape_all(
+            [Seller(user="testseller")], settings, store,
+            now=dt.datetime(2026, 9, 2, 4, 0),
+        )
+        assert results == []
+        assert fake.requested == []   # nothing was asked of eBay at all
+
+
+class TestRotation:
+    def test_never_visited_comes_first(self, store):
+        store.mark_seller_attempt("a", pages=1, new_rows=0, status="ok")
+        assert store.sellers_by_staleness(["a", "b"])[0] == "b"
+
+    def test_only_a_slice_of_the_panel_per_run(self, settings, store, monkeypatch):
+        fake = FakeFetcher(pages=1)
+        monkeypatch.setattr("ebayparts.scrape.Fetcher", lambda *a, **k: fake)
+        panel = [Seller(user=f"seller{i}") for i in range(20)]
+        results = scrape_all(panel, settings, store, mode="passive",
+                             ignore_hours=True)
+        assert len(results) == settings.pacing("passive").sellers_per_run
+
+    def test_consecutive_runs_visit_different_sellers(self, settings, store, monkeypatch):
+        monkeypatch.setattr("ebayparts.scrape.Fetcher",
+                            lambda *a, **k: FakeFetcher(pages=1))
+        panel = [Seller(user=f"seller{i}") for i in range(20)]
+        first = {r.seller for r in scrape_all(panel, settings, store,
+                                              ignore_hours=True)}
+        second = {r.seller for r in scrape_all(panel, settings, store,
+                                               ignore_hours=True)}
+        assert not (first & second), "a second run revisited the same sellers"
+
+
+class TestEarlyStop:
+    def test_stops_once_nothing_is_new(self, settings, store):
+        """The whole point: a caught-up seller costs 2 pages, not 40."""
+        # pre-load everything the fake serves, so every page is already known
+        for page in range(1, 11):
+            store.upsert_many(parse_search_page(page_html(start_id=page * 100)))
+
+        fake = FakeFetcher(pages=10)
+        pacing = Pacing(pages_per_seller=10, pages_without_new=2)
+        result = scrape_seller(
+            Seller(user="testseller"), settings, fake, store,
+            pacing=pacing, budget=DayBudget(store, limit=100),
+        )
+        assert result.rows_new == 0
+        assert result.pages == 2, "should have stopped after 2 quiet pages"
+        assert len(fake.requested) == 2
+
+    def test_keeps_going_while_rows_are_new(self, settings, store):
+        fake = FakeFetcher(pages=10)
+        pacing = Pacing(pages_per_seller=4, pages_without_new=2)
+        result = scrape_seller(
+            Seller(user="testseller"), settings, fake, store,
+            pacing=pacing, budget=DayBudget(store, limit=100),
+        )
+        assert result.pages == 4
+        assert result.rows_new == 20
+
+
+class TestStopConditions:
+    def test_budget_caps_pages_fetched(self, settings, store):
+        fake = FakeFetcher(pages=50)
+        pacing = Pacing(pages_per_seller=50, pages_without_new=99)
+        budget = DayBudget(store, limit=7)
+        with pytest.raises(BudgetExhausted):
+            scrape_seller(Seller(user="testseller"), settings, fake, store,
+                          pacing=pacing, budget=budget, max_pages=50)
+        assert len(fake.requested) == 7
+
+    def test_a_block_ends_the_run_without_retrying(self, settings, store, monkeypatch):
+        fake = FakeFetcher(pages=10, block_at=2)
+        monkeypatch.setattr("ebayparts.scrape.Fetcher", lambda *a, **k: fake)
+        panel = [Seller(user=f"seller{i}") for i in range(6)]
+        results = scrape_all(panel, settings, store, ignore_hours=True)
+        assert results[-1].status == "blocked"
+        assert len(results) == 1, "the run should stop, not move to the next seller"
+        assert len(fake.requested) == 2, "no retry into a refusal"

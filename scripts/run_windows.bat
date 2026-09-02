@@ -8,9 +8,13 @@ REM
 REM   Program/script : C:\Users\you\scraper\scripts\run_windows.bat
 REM   Start in       : C:\Users\you\scraper
 REM
+REM Schedule this ONCE A DAY, inside the active_hours window in settings.yml
+REM (08:00-23:00 by default). A run scheduled at 3am will simply decline.
+REM
 REM Tick "Run task as soon as possible after a scheduled start is missed" so a
 REM run still happens when the PC was asleep. Missing days costs you nothing --
-REM eBay serves the full 90-day history on every request.
+REM eBay serves the full 90-day history on every request, and the collector
+REM picks up whichever sellers are most overdue.
 REM ---------------------------------------------------------------------------
 
 cd /d "%~dp0.."

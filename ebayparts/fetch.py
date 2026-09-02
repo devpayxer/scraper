@@ -17,8 +17,9 @@ import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
-from .config import Settings
+from .config import Pacing, Settings
 
 log = logging.getLogger(__name__)
 
@@ -64,16 +65,27 @@ def _looks_like_results(html: str) -> bool:
 
 
 class Fetcher:
-    def __init__(self, settings: Settings, *, use_cache: bool = True, engine: str | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        use_cache: bool = True,
+        engine: str | None = None,
+        pacing: Pacing | None = None,
+        on_fetch: Callable[[str, str], None] | None = None,
+    ):
         self.settings = settings
         self.use_cache = use_cache
         self.engine = engine or settings.engine
+        self.pacing = pacing or settings.pacing()
+        self.on_fetch = on_fetch
         self.cache_dir = settings.resolve("cache_dir")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._last_request = 0.0
         self._session = None
         self._browser = None
         self._playwright = None
+        self.pages_fetched = 0
 
     # ------------------------------------------------------------- caching
     def _read_cache(self, url: str) -> str | None:
@@ -97,7 +109,23 @@ class Fetcher:
 
     # ------------------------------------------------------------ throttle
     def _sleep_between_requests(self) -> None:
-        wait = self.settings.delay_seconds + random.uniform(0, self.settings.delay_jitter)
+        """Wait a human-ish, uneven amount of time before the next page.
+
+        Two gaps, not one: an ordinary between-pages pause, plus a longer break
+        every `long_pause_every` pages. Steady clockwork requests are the most
+        machine-looking thing a client can do, and they are also simply more
+        load than this needs to place on eBay.
+        """
+        pacing = self.pacing
+        if pacing.long_pause_every and self.pages_fetched and \
+                self.pages_fetched % pacing.long_pause_every == 0:
+            pause = pacing.long_pause_seconds * random.uniform(0.7, 1.3)
+            log.info("pausing %.0fs after %s pages", pause, self.pages_fetched)
+            time.sleep(pause)
+            self._last_request = time.time()
+            return
+
+        wait = pacing.delay_seconds + random.uniform(0, pacing.delay_jitter)
         elapsed = time.time() - self._last_request
         if self._last_request and elapsed < wait:
             time.sleep(wait - elapsed)
@@ -162,6 +190,8 @@ class Fetcher:
         cached = self._read_cache(url)
         if cached is not None:
             log.debug("cache hit %s", url)
+            if self.on_fetch:
+                self.on_fetch(url, "cached")
             return Response(url=url, html=cached, from_cache=True)
 
         backoff = self.settings.retry_backoff
@@ -179,19 +209,24 @@ class Fetcher:
                 if _is_blocked(html):
                     raise BlockedError("challenge/interstitial page returned")
                 self._write_cache(url, html)
+                self.pages_fetched += 1
+                if self.on_fetch:
+                    self.on_fetch(url, "ok")
                 return Response(url=url, html=html)
             except BlockedError as exc:
                 last_error = exc
-                log.warning(
-                    "blocked on attempt %s/%s (%s); cooling off %ss",
-                    attempt, self.settings.max_retries, exc,
-                    self.settings.pause_on_block_seconds,
-                )
-                if attempt < self.settings.max_retries:
-                    time.sleep(self.settings.pause_on_block_seconds)
+                if self.on_fetch:
+                    self.on_fetch(url, "blocked")
+                # Never retry into a refusal. If eBay said no, the correct
+                # response is to stop, not to knock harder.
+                log.warning("blocked: %s -- not retrying", exc)
+                raise
             except Exception as exc:  # network hiccup, timeout, ...
                 last_error = exc
-                log.warning("fetch error attempt %s/%s: %s", attempt, self.settings.max_retries, exc)
+                if self.on_fetch:
+                    self.on_fetch(url, "error")
+                log.warning("fetch error attempt %s/%s: %s", attempt,
+                            self.settings.max_retries, exc)
                 if attempt < self.settings.max_retries:
                     time.sleep(backoff)
                     backoff *= 2

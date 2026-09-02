@@ -53,6 +53,32 @@ CREATE INDEX IF NOT EXISTS idx_listings_make      ON listings(make, model);
 CREATE INDEX IF NOT EXISTS idx_listings_category  ON listings(part_category);
 CREATE INDEX IF NOT EXISTS idx_listings_item      ON listings(item_id);
 
+-- One line per page actually fetched from eBay (cache hits excluded).
+-- This is what the daily budget is counted against, and it is the audit trail
+-- if you ever want to prove how little this thing asked for.
+CREATE TABLE IF NOT EXISTS fetch_log (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    fetched_at TEXT,
+    day       TEXT,
+    seller    TEXT,
+    url       TEXT,
+    outcome   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_fetch_log_day ON fetch_log(day);
+
+-- Rotation state: who was visited when, so the panel is spread over days
+-- instead of hammered in one night.
+CREATE TABLE IF NOT EXISTS seller_state (
+    seller          TEXT PRIMARY KEY,
+    last_attempt_at TEXT,
+    last_success_at TEXT,
+    last_pages      INTEGER DEFAULT 0,
+    last_new_rows   INTEGER DEFAULT 0,
+    total_rows      INTEGER DEFAULT 0,
+    backfilled      INTEGER DEFAULT 0,
+    consecutive_blocks INTEGER DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS scrape_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     started_at  TEXT,
@@ -161,6 +187,90 @@ class Store:
                 f"VALUES ({', '.join('?' for _ in keys)})",
                 [kwargs.get(k) for k in keys],
             )
+
+    # ------------------------------------------------------- pacing state
+    def record_fetch(self, seller: str | None, url: str, outcome: str) -> None:
+        """Log a real network fetch. Cache hits must not be logged."""
+        now = dt.datetime.now()
+        with self.transaction() as conn:
+            conn.execute(
+                "INSERT INTO fetch_log (fetched_at, day, seller, url, outcome) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (now.isoformat(timespec="seconds"), now.date().isoformat(),
+                 seller, url, outcome),
+            )
+
+    def pages_fetched_today(self, today: dt.date | None = None) -> int:
+        day = (today or dt.date.today()).isoformat()
+        row = self.conn.execute(
+            "SELECT COUNT(*) FROM fetch_log WHERE day = ? AND outcome != 'cached'", (day,)
+        ).fetchone()
+        return row[0] if row else 0
+
+    def fetch_history(self, days: int = 14) -> list[sqlite3.Row]:
+        return self.query(
+            "SELECT day, COUNT(*) AS pages, "
+            "SUM(outcome = 'blocked') AS blocked "
+            "FROM fetch_log WHERE outcome != 'cached' "
+            "GROUP BY day ORDER BY day DESC LIMIT ?", (days,)
+        )
+
+    def get_seller_state(self, seller: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT * FROM seller_state WHERE seller = ?", (seller,)
+        ).fetchone()
+
+    def mark_seller_attempt(self, seller: str, *, pages: int, new_rows: int,
+                            status: str, backfilled: bool | None = None) -> None:
+        now = dt.datetime.now().isoformat(timespec="seconds")
+        existing = self.get_seller_state(seller)
+        blocks = (existing["consecutive_blocks"] if existing else 0)
+        blocks = blocks + 1 if status == "blocked" else 0
+        done = existing["backfilled"] if existing else 0
+        if backfilled is not None:
+            done = int(backfilled)
+        with self.transaction() as conn:
+            conn.execute(
+                """INSERT INTO seller_state
+                       (seller, last_attempt_at, last_success_at, last_pages,
+                        last_new_rows, total_rows, backfilled, consecutive_blocks)
+                   VALUES (?, ?, ?, ?, ?,
+                           (SELECT COUNT(*) FROM listings WHERE seller = ?), ?, ?)
+                   ON CONFLICT(seller) DO UPDATE SET
+                       last_attempt_at = excluded.last_attempt_at,
+                       last_success_at = COALESCE(excluded.last_success_at,
+                                                  seller_state.last_success_at),
+                       last_pages = excluded.last_pages,
+                       last_new_rows = excluded.last_new_rows,
+                       total_rows = excluded.total_rows,
+                       backfilled = excluded.backfilled,
+                       consecutive_blocks = excluded.consecutive_blocks""",
+                (seller, now, now if status == "ok" else None, pages, new_rows,
+                 seller, done, blocks),
+            )
+
+    def sellers_by_staleness(self, users: list[str]) -> list[str]:
+        """Least-recently-visited first, never-visited before that.
+
+        This is the rotation: a run touches a handful of sellers, and over a
+        week the whole panel comes round without any single day looking busy.
+        """
+        rows = {
+            r["seller"]: r["last_attempt_at"]
+            for r in self.query("SELECT seller, last_attempt_at FROM seller_state")
+        }
+        return sorted(users, key=lambda u: (rows.get(u) is not None, rows.get(u) or ""))
+
+    def known_row_count(self, listings: Iterable[Listing]) -> int:
+        """How many of these sales are already stored."""
+        count = 0
+        for listing in listings:
+            hit = self.conn.execute(
+                "SELECT 1 FROM listings WHERE row_key = ?", (row_key(listing),)
+            ).fetchone()
+            if hit:
+                count += 1
+        return count
 
     def reindex(self) -> int:
         """Recompute every title-derived column in place.
