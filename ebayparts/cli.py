@@ -236,6 +236,30 @@ def cmd_plan(args, settings: Settings) -> int:
     return 0
 
 
+def cmd_browser(args, settings: Settings) -> int:
+    """Open the persistent browser profile for a one-off manual visit.
+
+    Do this once before the first browser run: accept the cookie banner, set
+    your region, and let the profile look like one that has been used. Sign in
+    only if you accept the account risk -- an IP block is recoverable, a flagged
+    selling account is a bigger problem.
+    """
+    from .fetch import Fetcher
+
+    print(f"Opening {settings.marketplace} in the profile at "
+          f"{settings.resolve('browser_profile_dir')}.")
+    print("Accept any cookie banner, then close the window when you are done.\n")
+    settings.browser_headless = False
+    fetcher = Fetcher(settings, use_cache=False, engine="playwright")
+    try:
+        fetcher.open_browser(args.url)
+        input("Press Enter here once you have finished in the browser... ")
+    finally:
+        fetcher.close()
+    print("Profile saved. Now run:  python -m ebayparts scrape --engine playwright")
+    return 0
+
+
 def cmd_urls(args, settings: Settings) -> int:
     """Print the sold-search URL for each seller, to open in your own browser."""
     sellers = [s for s in load_sellers() if s.enabled]
@@ -611,6 +635,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ignore-hours", action="store_true",
                    help="run even outside the configured active hours")
     p.set_defaults(func=cmd_scrape)
+
+    p = sub.add_parser("browser", help="open the persistent browser profile once, by hand")
+    p.add_argument("--url", help="page to open (default: the eBay homepage)")
+    p.set_defaults(func=cmd_browser)
 
     p = sub.add_parser("urls", help="print/open the sold pages to save from your browser")
     p.add_argument("--pages", type=int, default=1, help="pages per seller (default 1)")

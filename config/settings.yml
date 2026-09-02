@@ -81,5 +81,15 @@ warm_up: false
 # you can re-parse historical HTML after improving the parser (`reparse`).
 cache_dir: data/cache
 inbox_dir: data/inbox        # where you save pages for `import`
+
+# --engine playwright drives a real Chromium with a persistent profile, so
+# cookies survive between runs. Visible by default: headless browsers are both
+# easier to detect and harder to trust -- you can watch what it is doing and
+# close the window to stop it.
+browser_profile_dir: data/browser-profile
+browser_headless: false
+browser_slow_mo_ms: 0        # extra ms between browser actions, 0 = off
+browser_executable: ""       # path to an existing Chrome/Chromium, or "" to use
+                             # the one `playwright install chromium` downloads
 cache_ttl_hours: 20
 database: data/parts.db

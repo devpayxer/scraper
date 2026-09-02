@@ -192,29 +192,69 @@ class Fetcher:
         except Exception as exc:
             log.debug("warm-up visit failed (continuing): %s", exc)
 
-    def _fetch_playwright(self, url: str) -> str:
-        if self._browser is None:
-            try:
-                from playwright.sync_api import sync_playwright
-            except ImportError as exc:  # pragma: no cover
-                raise FetchError(
-                    "playwright is not installed. `pip install playwright && "
-                    "playwright install chromium`."
-                ) from exc
-            self._playwright = sync_playwright().start()
-            self._browser = self._playwright.chromium.launch(headless=True)
-        context = self._browser.new_context(
-            locale="en-US", viewport={"width": 1440, "height": 900},
-            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-        )
-        page = context.new_page()
+    def _ensure_browser(self):
+        """Launch a persistent Chromium profile.
+
+        Persistent, not a fresh context per page: cookies and local storage
+        survive between runs, so the second visit looks like a returning
+        visitor rather than a brand-new browser every single time.
+
+        Deliberately NOT patched for stealth -- no
+        --disable-blink-features=AutomationControlled, no webdriver masking, no
+        stealth plugin. This is an honest Playwright Chromium. If eBay declines
+        to serve automation, that is an answer, not an obstacle to route around.
+        """
+        if self._browser is not None:
+            return self._browser
         try:
-            page.goto(url, wait_until="domcontentloaded",
-                      timeout=self.settings.timeout_seconds * 1000)
-            page.wait_for_timeout(1500)
-            return page.content()
-        finally:
-            context.close()
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:  # pragma: no cover
+            raise FetchError(
+                "playwright is not installed. Run:\n"
+                "    pip install playwright\n"
+                "    playwright install chromium"
+            ) from exc
+
+        profile_dir = self.settings.resolve("browser_profile_dir")
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        options: dict[str, object] = {
+            "user_data_dir": str(profile_dir),
+            "headless": self.settings.browser_headless,
+            "viewport": {"width": 1440, "height": 900},
+            "locale": "en-US",
+            "slow_mo": self.settings.browser_slow_mo_ms or 0,
+        }
+        if self.settings.browser_executable:
+            options["executable_path"] = self.settings.browser_executable
+
+        try:
+            self._playwright = sync_playwright().start()
+            self._browser = self._playwright.chromium.launch_persistent_context(**options)
+        except Exception as exc:
+            # A half-started Playwright poisons every later attempt with a
+            # misleading "Sync API inside the asyncio loop" error, hiding the
+            # real cause. Tear it down so the next try reports the truth.
+            self._shutdown_browser()
+            hint = ""
+            if "Executable doesn't exist" in str(exc):
+                hint = ("\n    The browser is not installed. Run:  playwright install chromium"
+                        "\n    Or point browser_executable in settings.yml at an existing Chrome.")
+            raise FetchError(f"could not start the browser: {exc}{hint}") from exc
+
+        self._browser.set_default_timeout(self.settings.timeout_seconds * 1000)
+        log.info("browser profile: %s (%s)", profile_dir,
+                 "headless" if self.settings.browser_headless else "visible")
+        return self._browser
+
+    def _fetch_playwright(self, url: str) -> str:
+        context = self._ensure_browser()
+        page = context.pages[0] if context.pages else context.new_page()
+        page.goto(url, wait_until="domcontentloaded",
+                  timeout=self.settings.timeout_seconds * 1000)
+        # eBay renders results server-side; this is just settling time, not a
+        # scripted imitation of a person reading the page.
+        page.wait_for_timeout(random.randint(1200, 2600))
+        return page.content()
 
     # --------------------------------------------------------------- fetch
     def get(self, url: str) -> Response:
@@ -264,6 +304,23 @@ class Fetcher:
 
         raise FetchError(f"giving up on {url}: {last_error}")
 
+    def open_browser(self, url: str | None = None) -> None:
+        """Open the persistent profile for a one-off manual visit."""
+        context = self._ensure_browser()
+        page = context.pages[0] if context.pages else context.new_page()
+        page.goto(url or f"https://{self.settings.marketplace}/",
+                  wait_until="domcontentloaded")
+
+    def _shutdown_browser(self) -> None:
+        for attr, stop in (("_browser", "close"), ("_playwright", "stop")):
+            handle = getattr(self, attr, None)
+            if handle is not None:
+                try:
+                    getattr(handle, stop)()
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+
     def close(self) -> None:
         if self._session is not None:
             try:
@@ -271,12 +328,7 @@ class Fetcher:
             except Exception:
                 pass
             self._session = None
-        if self._browser is not None:
-            self._browser.close()
-            self._browser = None
-        if self._playwright is not None:
-            self._playwright.stop()
-            self._playwright = None
+        self._shutdown_browser()
 
     def __enter__(self) -> "Fetcher":
         return self

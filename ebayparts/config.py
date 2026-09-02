@@ -80,6 +80,10 @@ class Settings:
     warm_up: bool = False
     cache_dir: str = "data/cache"
     inbox_dir: str = "data/inbox"
+    browser_profile_dir: str = "data/browser-profile"
+    browser_headless: bool = False
+    browser_slow_mo_ms: int = 0
+    browser_executable: str = ""
     cache_ttl_hours: int = 20
     database: str = "data/parts.db"
 

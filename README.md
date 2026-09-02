@@ -249,6 +249,7 @@ Only `user` is required — it is what goes into eBay's `_ssn=` parameter.
 | `scrape` | One paced run: a few sellers, a capped number of pages. `--mode backfill` for the initial pull, `--sellers a,b`, `--max-pages N`, `--ignore-hours`, `--no-cache`, `--engine playwright` |
 | `plan` | Show what the next run would do — budget, queue, timing. Touches nothing |
 | `probe` | Find a browser profile eBay answers on your connection. `--list` shows all targets |
+| `browser` | Open the persistent browser profile once, by hand (cookie banner, region) |
 | `urls` | Print the sold pages to save from your browser. `--open` opens them as tabs, `--out` writes a clickable index |
 | `import` | Parse pages you saved into `data/inbox`. `--archive` files away the ones that worked |
 | `discover` | Rank sellers by how often they appear in category-wide sold results |
@@ -294,7 +295,42 @@ check the connection, VPN or firewall).
 useless — hardly any real Chrome 124 is still browsing, so claiming to be one
 is itself the anomaly.
 
-### When eBay refuses outright
+### When eBay refuses outright: drive a real browser
+
+`probe` reporting **refused** across every profile means eBay will not serve an
+HTTP client from your connection, however it is dressed. A real browser is a
+different proposition, and it is the route that has a chance:
+
+```bash
+pip install playwright && playwright install chromium
+
+python -m ebayparts browser                        # one-off: accept cookies, close
+python -m ebayparts scrape --engine playwright --max-pages 2
+```
+
+The browser is **visible by default** and uses a **persistent profile**
+(`data/browser-profile`), so cookies survive between runs and the second visit
+looks like a returning visitor rather than a fresh browser every time. You can
+watch what it does, and closing the window stops it.
+
+All the passive pacing still applies — daily budget, seller rotation, the
+early stop, active hours. Only the fetching changed.
+
+**Two things worth weighing:**
+
+* **Do not sign in to your selling account.** An IP block is recoverable;
+  automated activity tied to a selling account is a bigger problem. The profile
+  works fine signed out.
+* This is still automated access under eBay's User Agreement. It is not
+  disguised — see below — but it is not sanctioned either.
+
+**What this deliberately is not:** there is no `--disable-blink-features=
+AutomationControlled`, no `navigator.webdriver` masking, no stealth plugin, no
+scripted mouse jiggling. It is an honest Playwright Chromium. If eBay declines
+to serve automation, that is an answer rather than an obstacle to route around,
+and the run stops.
+
+### When even that is refused
 
 If `probe` reports **refused** across every profile, eBay does not want
 automated requests from your connection, and no setting in here changes that.

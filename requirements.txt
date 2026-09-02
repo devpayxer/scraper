@@ -7,6 +7,7 @@ PyYAML>=6.0
 # This is what makes eBay actually answer; plain requests/urllib get 403.
 curl_cffi>=0.7
 
-# Optional: only needed for `--engine playwright` (real headless Chromium).
-#   pip install playwright && playwright install chromium
-# playwright>=1.44
+# Needed for `--engine playwright`, which drives a real Chromium. This is the
+# route that works when eBay refuses plain HTTP clients. After installing:
+#   playwright install chromium
+playwright>=1.44
