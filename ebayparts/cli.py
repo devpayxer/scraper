@@ -10,6 +10,7 @@ from pathlib import Path
 from . import __version__
 from .analyze import build_report, coverage, group_by, load_rows, momentum, price_stats
 from .config import ROOT, Settings, load_sellers
+from .probe import DEFAULT_PROFILES, available_profiles, diagnose, run_probe
 from .report import export_listings, write_csvs, write_html, write_json
 from .scrape import DayBudget, discover_sellers, scrape_all
 from .store import Store
@@ -231,6 +232,65 @@ def cmd_plan(args, settings: Settings) -> int:
 
     print_coverage_warnings(coverage_rows, settings.lookback_days)
     return 0
+
+
+def cmd_probe(args, settings: Settings) -> int:
+    """Find a browser profile eBay answers on this connection."""
+    if args.list:
+        profiles = available_profiles()
+        if not profiles:
+            print("curl_cffi is not installed.", file=sys.stderr)
+            return 1
+        print(f"\n{len(profiles)} impersonation targets available:\n")
+        for i in range(0, len(profiles), 6):
+            print("  " + "  ".join(f"{p:<18}" for p in profiles[i:i + 6]))
+        return 0
+
+    chosen = args.profiles.split(",") if args.profiles else DEFAULT_PROFILES
+    seller = args.seller or (load_sellers()[0].user if load_sellers() else None)
+    print(f"\nProbing eBay with {len(chosen)} profile(s), "
+          f"~{args.delay:.0f}s apart. Seller: {seller or 'category search'}.")
+    print("This makes a handful of requests, once. Ctrl-C to stop.\n")
+
+    results = run_probe(settings, profiles=chosen, seller=seller,
+                        delay=args.delay, try_warm_up=not args.no_warm_up)
+
+    rows = [{
+        "profile": r.profile,
+        "warm": "yes" if r.warm_up else "no",
+        "http": r.http if r.http is not None else "-",
+        "result": r.status,
+        "listings": r.listings,
+        "detail": r.title or r.detail,
+    } for r in results]
+    print_table(rows, [("profile", "profile"), ("warm-up", "warm"), ("http", "http"),
+                       ("result", "result"), ("items", "listings"),
+                       ("page / error", "detail")], limit=len(rows))
+
+    winner = next((r for r in results if r.works), None)
+    if winner:
+        print(f"\n  {winner.profile} works"
+              f"{' with warm_up' if winner.warm_up else ''} "
+              f"({winner.listings} listings parsed).\n")
+        print("  Put this in config/settings.yml:\n")
+        print(f"    impersonate: {winner.profile}")
+        print(f"    warm_up: {'true' if winner.warm_up else 'false'}\n")
+        return 0
+
+    print("\n  No profile got through.")
+    if diagnose(results) == "refused":
+        print("  eBay is answering but refusing this connection -- it is the IP or\n"
+              "  the account-less session being turned away, not the client config.\n"
+              "  Nothing in this tool will change that. Your options:\n"
+              "    1. Save a results page from your own browser and parse it:\n"
+              "         python -m ebayparts parse-file page.html --debug --save\n"
+              "    2. Try --engine playwright (a real browser, harder to refuse)\n"
+              "    3. Apply for eBay's Marketplace Insights API, which serves this\n"
+              "       same 90-day sold data under terms that permit it")
+    else:
+        print("  These look like network errors rather than refusals -- check your\n"
+              "  connection, VPN, or firewall and try again.")
+    return 1
 
 
 def cmd_discover(args, settings: Settings) -> int:
@@ -462,6 +522,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ignore-hours", action="store_true",
                    help="run even outside the configured active hours")
     p.set_defaults(func=cmd_scrape)
+
+    p = sub.add_parser("probe", help="find a browser profile eBay answers on this connection")
+    p.add_argument("--profiles", help="comma-separated targets to try")
+    p.add_argument("--seller", help="seller to test against (default: first configured)")
+    p.add_argument("--delay", type=float, default=6.0, help="seconds between attempts")
+    p.add_argument("--no-warm-up", action="store_true",
+                   help="skip the homepage visit variant")
+    p.add_argument("--list", action="store_true", help="list valid targets and exit")
+    p.set_defaults(func=cmd_probe)
 
     p = sub.add_parser("plan", help="show what the next run would do; touches nothing")
     p.add_argument("--mode", choices=["passive", "backfill"])

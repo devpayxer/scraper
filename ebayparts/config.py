@@ -76,7 +76,8 @@ class Settings:
     pause_on_block_seconds: int = 900
     mode: str = "passive"
     engine: str = "curl_cffi"
-    impersonate: str = "chrome124"
+    impersonate: str = "chrome146"
+    warm_up: bool = True
     cache_dir: str = "data/cache"
     cache_ttl_hours: int = 20
     database: str = "data/parts.db"

@@ -64,7 +64,17 @@ retry_backoff: 20.0          # seconds, doubled each retry
 # curl_cffi -> impersonates a real Chrome TLS fingerprint (recommended)
 # playwright -> real headless Chromium, slower, needs `playwright install chromium`
 engine: curl_cffi
-impersonate: chrome124
+
+# Which browser curl_cffi presents itself as. This must be a CURRENT browser:
+# claiming to be a two-year-old Chrome is itself an anomaly, since almost no
+# real Chrome that old is still browsing. Run `probe` to find one that your
+# connection actually gets answers with, then set it here.
+impersonate: chrome146
+
+# Visit the eBay homepage before the first search, the way a person arrives at
+# a site rather than teleporting into a deep search URL. Costs one request per
+# run and picks up the session cookies eBay expects to see.
+warm_up: true
 
 # Cache every fetched page to disk. Re-running a scrape then costs nothing and
 # you can re-parse historical HTML after improving the parser (`reparse`).

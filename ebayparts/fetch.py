@@ -155,7 +155,15 @@ class Fetcher:
                     "curl_cffi is not installed. `pip install curl_cffi`, or run with "
                     "--engine playwright."
                 ) from exc
-            self._session = cffi_requests.Session(impersonate=self.settings.impersonate)
+            try:
+                self._session = cffi_requests.Session(
+                    impersonate=self.settings.impersonate)
+            except Exception as exc:
+                raise FetchError(
+                    f"curl_cffi rejected impersonate={self.settings.impersonate!r}. "
+                    f"Run `python -m ebayparts probe --list` to see valid targets."
+                ) from exc
+            self._warm_up()
         response = self._session.get(
             url, headers=self._headers(), timeout=self.settings.timeout_seconds,
             allow_redirects=True,
@@ -165,6 +173,24 @@ class Fetcher:
         if response.status_code >= 400:
             raise FetchError(f"HTTP {response.status_code} for {url}")
         return response.text
+
+    def _warm_up(self) -> None:
+        """Land on the homepage before searching.
+
+        A person arrives at ebay.com and then searches; they do not appear
+        directly at a deep sold-search URL with no cookies. This is one request
+        per run, and it is also simply the correct way to acquire a session.
+        """
+        if not getattr(self.settings, "warm_up", False) or self._session is None:
+            return
+        home = f"https://{self.settings.marketplace}/"
+        try:
+            self._session.get(home, headers=self._headers(),
+                              timeout=self.settings.timeout_seconds)
+            log.debug("warm-up visit to %s ok", home)
+            time.sleep(random.uniform(1.5, 4.0))
+        except Exception as exc:
+            log.debug("warm-up visit failed (continuing): %s", exc)
 
     def _fetch_playwright(self, url: str) -> str:
         if self._browser is None:

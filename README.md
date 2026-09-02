@@ -248,6 +248,7 @@ Only `user` is required — it is what goes into eBay's `_ssn=` parameter.
 |---|---|
 | `scrape` | One paced run: a few sellers, a capped number of pages. `--mode backfill` for the initial pull, `--sellers a,b`, `--max-pages N`, `--ignore-hours`, `--no-cache`, `--engine playwright` |
 | `plan` | Show what the next run would do — budget, queue, timing. Touches nothing |
+| `probe` | Find a browser profile eBay answers on your connection. `--list` shows all targets |
 | `discover` | Rank sellers by how often they appear in category-wide sold results |
 | `parse-file` | Parse a **saved HTML page** offline. `--debug` shows every field, `--save` stores it |
 | `reindex` | Re-derive make/model/part type from stored titles after editing the taxonomies |
@@ -260,6 +261,38 @@ Only `user` is required — it is what goes into eBay's `_ssn=` parameter.
 ---
 
 ## If eBay blocks you
+
+**Start here:** find a client configuration your connection gets answers with.
+
+```bash
+python -m ebayparts probe
+```
+
+It tries a handful of current browser profiles against one eBay URL, spaced a
+few seconds apart, and tells you what came back:
+
+```
+  profile    warm-up  http   result  items   page / error
+  ------------------------------------------------------------
+  chrome150       no   200       ok      60   spartan_auto | eBay
+
+  chrome150 works (60 listings parsed).
+  Put this in config/settings.yml:
+    impersonate: chrome150
+    warm_up: false
+```
+
+If nothing gets through, the probe distinguishes the two cases that matter:
+**refused** (eBay answered and said no — your IP or session is unwelcome, and no
+client setting will change that) versus **unreachable** (nothing answered —
+check the connection, VPN or firewall).
+
+`impersonate` must name a *current* browser. The default is `chrome146`;
+`probe --list` shows all 54 targets. A two-year-old profile is worse than
+useless — hardly any real Chrome 124 is still browsing, so claiming to be one
+is itself the anomaly.
+
+### Other things to try
 
 A block looks like zero rows parsed, or `status: blocked` in the scrape summary.
 In order of what to try:
