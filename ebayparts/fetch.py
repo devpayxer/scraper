@@ -23,12 +23,17 @@ from .config import Pacing, Settings
 
 log = logging.getLogger(__name__)
 
+# Signatures of a challenge/refusal page rather than results. Several of these
+# come from a real eBay interstitial captured while building this -- see
+# tests/fixtures/blocked_challenge.html.
 BLOCK_MARKERS = (
     "Pardon Our Interruption",
     "Checking your browser",
     "captcha",
     "unusual traffic",
     "Error Page | eBay",
+    "Security Measure",          # eBay's current challenge page title
+    "verify yourself to continue",
     "splashui",
 )
 

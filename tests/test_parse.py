@@ -74,3 +74,31 @@ class TestNewLayout:
 
 def test_block_page_yields_nothing():
     assert parse_search_page("<html><body>Pardon Our Interruption</body></html>") == []
+
+
+class TestBlockedPage:
+    """A real eBay challenge page, captured live.
+
+    The dangerous failure is not being blocked -- it is being blocked and not
+    noticing, because a challenge page parses to zero listings and looks
+    exactly like "this seller has nothing more to show".
+    """
+
+    @pytest.fixture
+    def challenge(self):
+        return (FIXTURES / "blocked_challenge.html").read_text(encoding="utf-8")
+
+    def test_recognised_as_a_block(self, challenge):
+        from ebayparts.fetch import _is_blocked
+        assert _is_blocked(challenge)
+
+    def test_not_mistaken_for_results(self, challenge):
+        from ebayparts.fetch import _looks_like_results
+        assert not _looks_like_results(challenge)
+
+    def test_yields_no_listings(self, challenge):
+        assert parse_search_page(challenge) == []
+
+    def test_real_results_are_not_flagged_as_blocked(self, page):
+        from ebayparts.fetch import _is_blocked
+        assert not _is_blocked(page)

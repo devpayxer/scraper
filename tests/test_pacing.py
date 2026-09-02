@@ -281,3 +281,45 @@ class TestStaleness:
         store.mark_seller_attempt("good", pages=1, new_rows=1, status="ok")
         print_coverage_warnings(store.coverage_report(["good"]), lookback_days=90)
         assert capsys.readouterr().out == ""
+
+
+class TestSilentBlockDetection:
+    """An unrecognised challenge page must not be recorded as a clean run."""
+
+    def _fetcher_returning(self, html):
+        class Fake:
+            requested: list = []
+
+            def get(self, url):
+                self.requested.append(url)
+                return Response(url=url, html=html)
+
+            def close(self): pass
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+        return Fake()
+
+    def test_empty_non_results_page_counts_as_blocked(self, settings, store):
+        challenge = (__import__("pathlib").Path(__file__).parent
+                     / "fixtures" / "blocked_challenge.html").read_text(encoding="utf-8")
+        fake = self._fetcher_returning(challenge)
+        result = scrape_seller(
+            Seller(user="quiet"), settings, fake, store,
+            pacing=Pacing(pages_per_seller=5), budget=DayBudget(store, limit=50),
+        )
+        assert result.status == "blocked"
+        # and crucially, coverage must not now believe this seller is fresh
+        assert store.coverage_report(["quiet"])[0]["status"] == "pending"
+
+    def test_a_genuinely_empty_store_is_not_called_blocked(self, settings, store):
+        """Real results markup with zero items is an empty store, not a block."""
+        empty = ("<html><body><ul class='srp-results'>"
+                 "<li class='s-item'></li></ul>"
+                 "<div class='srp-river'></div></body></html>")
+        fake = self._fetcher_returning(empty)
+        result = scrape_seller(
+            Seller(user="empty"), settings, fake, store,
+            pacing=Pacing(pages_per_seller=5), budget=DayBudget(store, limit=50),
+        )
+        assert result.status == "ok"
+        assert result.rows_found == 0

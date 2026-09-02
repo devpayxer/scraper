@@ -7,7 +7,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from .config import Pacing, Seller, Settings
-from .fetch import BlockedError, FetchError, Fetcher
+from .fetch import BlockedError, FetchError, Fetcher, _looks_like_results
 from .parse import parse_search_page, result_count
 from .store import Store
 from .urls import category_browse_url, sold_search_url
@@ -115,6 +115,20 @@ def scrape_seller(
         seen_ids.update(item.item_id for item in fresh)
         if since:
             fresh = [i for i in fresh if i.sold_date is None or i.sold_date >= since]
+
+        # An empty page 1 is ambiguous: either the seller genuinely has no sold
+        # listings, or we were served a challenge page whose signature we do not
+        # recognise. Recording the second as a clean run would mark the seller
+        # freshly collected when nothing was collected, which is exactly the
+        # drift the coverage warnings exist to catch. So: if it does not even
+        # look like a results page, treat it as a refusal.
+        if not listings and page == 1 and not _looks_like_results(response.html):
+            result.status = "blocked"
+            result.note = "page 1 returned no results and no results markup"
+            log.error("%s: page 1 does not look like a results page -- treating "
+                      "as blocked, not as an empty store", seller.user)
+            result.pages = page
+            break
 
         # eBay repeats the last page forever instead of 404ing.
         if not listings or (page > 1 and not fresh):
