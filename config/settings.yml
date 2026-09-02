@@ -71,13 +71,15 @@ engine: curl_cffi
 # connection actually gets answers with, then set it here.
 impersonate: chrome146
 
-# Visit the eBay homepage before the first search, the way a person arrives at
-# a site rather than teleporting into a deep search URL. Costs one request per
-# run and picks up the session cookies eBay expects to see.
-warm_up: true
+# Visit the eBay homepage before the first search, to pick up session cookies.
+# Default OFF: measured against a real residential connection, the warm-up made
+# things worse -- cold requests got a challenge page, warmed ones got a hard
+# 403. Turn it on only if `probe` shows it helping on your connection.
+warm_up: false
 
 # Cache every fetched page to disk. Re-running a scrape then costs nothing and
 # you can re-parse historical HTML after improving the parser (`reparse`).
 cache_dir: data/cache
+inbox_dir: data/inbox        # where you save pages for `import`
 cache_ttl_hours: 20
 database: data/parts.db

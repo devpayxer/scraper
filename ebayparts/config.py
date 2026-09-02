@@ -77,8 +77,9 @@ class Settings:
     mode: str = "passive"
     engine: str = "curl_cffi"
     impersonate: str = "chrome146"
-    warm_up: bool = True
+    warm_up: bool = False
     cache_dir: str = "data/cache"
+    inbox_dir: str = "data/inbox"
     cache_ttl_hours: int = 20
     database: str = "data/parts.db"
 

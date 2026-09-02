@@ -10,9 +10,11 @@ from pathlib import Path
 from . import __version__
 from .analyze import build_report, coverage, group_by, load_rows, momentum, price_stats
 from .config import ROOT, Settings, load_sellers
+from .inbox import find_pages, import_folder
 from .probe import DEFAULT_PROFILES, available_profiles, diagnose, run_probe
 from .report import export_listings, write_csvs, write_html, write_json
 from .scrape import DayBudget, discover_sellers, scrape_all
+from .urls import sold_search_url
 from .store import Store
 
 log = logging.getLogger("ebayparts")
@@ -231,6 +233,93 @@ def cmd_plan(args, settings: Settings) -> int:
                     limit=7)
 
     print_coverage_warnings(coverage_rows, settings.lookback_days)
+    return 0
+
+
+def cmd_urls(args, settings: Settings) -> int:
+    """Print the sold-search URL for each seller, to open in your own browser."""
+    sellers = [s for s in load_sellers() if s.enabled]
+    if not sellers:
+        print("No sellers configured.", file=sys.stderr)
+        return 1
+    if args.sellers:
+        wanted = {u.strip().lower() for u in args.sellers.split(",")}
+        sellers = [s for s in sellers if s.user.lower() in wanted]
+
+    urls = []
+    for seller in sellers:
+        for page in range(1, args.pages + 1):
+            urls.append((seller.user, page, sold_search_url(settings, seller, page=page)))
+
+    if args.open:
+        import webbrowser
+        print(f"Opening {len(urls)} tab(s)...")
+        for _, _, url in urls:
+            webbrowser.open_new_tab(url)
+        print("\nIn each tab: Ctrl+S -> save as \"Webpage, HTML Only\" into")
+        print(f"  {settings.resolve('inbox_dir')}")
+        print("\nThen run:  python -m ebayparts import")
+        return 0
+
+    if args.out:
+        path = Path(args.out)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        links = "\n".join(
+            f'<li><a href="{u}" target="_blank">{s} — page {p}</a></li>'
+            for s, p, u in urls
+        )
+        path.write_text(
+            f"<!doctype html><meta charset=utf-8><title>eBay sold pages</title>"
+            f"<h1>{len(urls)} page(s) to save</h1><ol>{links}</ol>",
+            encoding="utf-8",
+        )
+        print(f"Wrote {path} — open it and middle-click each link.")
+        return 0
+
+    for _, _, url in urls:
+        print(url)
+    return 0
+
+
+def cmd_import(args, settings: Settings) -> int:
+    """Parse sold pages you saved from your browser."""
+    folder = Path(args.folder) if args.folder else settings.resolve("inbox_dir")
+    folder.mkdir(parents=True, exist_ok=True)
+
+    pages = find_pages(folder)
+    if not pages:
+        print(f"No saved pages found in {folder}\n")
+        print("Save eBay sold-search pages there first:")
+        print("  1. python -m ebayparts urls --open")
+        print("  2. in each tab: Ctrl+S, choose \"Webpage, HTML Only\"")
+        print(f"  3. save into {folder}")
+        print("  4. run this command again")
+        return 1
+
+    print(f"Importing {len(pages)} page(s) from {folder}\n")
+    with open_store(settings) as store:
+        results = import_folder(folder, store, archive=args.archive)
+        rows = [{
+            "file": r.path.name[:44],
+            "listings": r.listings,
+            "new": r.new,
+            "seller": ", ".join(r.sellers)[:22] or "-",
+            "status": r.status if r.status != "ok" else "",
+        } for r in results]
+        print_table(rows, [("file", "file"), ("listings", "listings"), ("new", "new"),
+                           ("seller", "seller"), ("note", "status")],
+                    limit=len(rows))
+        total_new = sum(r.new for r in results)
+        print(f"\nStored {total_new:,} new sale(s). Database now holds "
+              f"{store.count():,} rows ({' to '.join(str(d) for d in store.date_span())}).")
+
+    problems = [r for r in results if r.status != "ok"]
+    if problems:
+        print(f"\n{len(problems)} file(s) had trouble:")
+        for r in problems:
+            print(f"  {r.path.name}: {r.note}")
+    if total_new:
+        print("\nNext:  python -m ebayparts report")
     return 0
 
 
@@ -522,6 +611,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ignore-hours", action="store_true",
                    help="run even outside the configured active hours")
     p.set_defaults(func=cmd_scrape)
+
+    p = sub.add_parser("urls", help="print/open the sold pages to save from your browser")
+    p.add_argument("--pages", type=int, default=1, help="pages per seller (default 1)")
+    p.add_argument("--sellers", help="comma-separated usernames")
+    p.add_argument("--open", action="store_true", help="open them as browser tabs")
+    p.add_argument("--out", help="write a clickable HTML index instead")
+    p.set_defaults(func=cmd_urls)
+
+    p = sub.add_parser("import", help="parse sold pages you saved from your browser")
+    p.add_argument("--folder", help="where the saved pages are (default data/inbox)")
+    p.add_argument("--archive", action="store_true",
+                   help="move imported files into an imported/ subfolder")
+    p.set_defaults(func=cmd_import)
 
     p = sub.add_parser("probe", help="find a browser profile eBay answers on this connection")
     p.add_argument("--profiles", help="comma-separated targets to try")

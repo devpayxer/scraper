@@ -249,6 +249,8 @@ Only `user` is required — it is what goes into eBay's `_ssn=` parameter.
 | `scrape` | One paced run: a few sellers, a capped number of pages. `--mode backfill` for the initial pull, `--sellers a,b`, `--max-pages N`, `--ignore-hours`, `--no-cache`, `--engine playwright` |
 | `plan` | Show what the next run would do — budget, queue, timing. Touches nothing |
 | `probe` | Find a browser profile eBay answers on your connection. `--list` shows all targets |
+| `urls` | Print the sold pages to save from your browser. `--open` opens them as tabs, `--out` writes a clickable index |
+| `import` | Parse pages you saved into `data/inbox`. `--archive` files away the ones that worked |
 | `discover` | Rank sellers by how often they appear in category-wide sold results |
 | `parse-file` | Parse a **saved HTML page** offline. `--debug` shows every field, `--save` stores it |
 | `reindex` | Re-derive make/model/part type from stored titles after editing the taxonomies |
@@ -291,6 +293,30 @@ check the connection, VPN or firewall).
 `probe --list` shows all 54 targets. A two-year-old profile is worse than
 useless — hardly any real Chrome 124 is still browsing, so claiming to be one
 is itself the anomaly.
+
+### When eBay refuses outright
+
+If `probe` reports **refused** across every profile, eBay does not want
+automated requests from your connection, and no setting in here changes that.
+The route that still works — and stays plainly above board, because it is just
+you browsing:
+
+```bash
+python -m ebayparts urls --open      # opens each seller's sold page as a tab
+#   in each tab: Ctrl+S -> "Webpage, HTML Only" -> save into data/inbox
+python -m ebayparts import --archive # parses everything you saved
+python -m ebayparts report
+```
+
+`import` tells you honestly what it read. A captcha page saved by mistake is
+reported as `challenge`, not silently counted as an empty store, and files that
+failed stay in the inbox for a retry while successful ones are archived by date.
+
+Everything downstream — rotation, dedupe, the 90-day window, the report — works
+identically on imported pages. Only the fetching changes.
+
+One page holds 240 sold listings, so most sellers need a single save. A 50-seller
+panel is 50 tabs once, then a handful of re-saves a week for the busy ones.
 
 ### Other things to try
 
