@@ -10,6 +10,10 @@ from pathlib import Path
 from . import __version__
 from .analyze import build_report, coverage, group_by, load_rows, momentum, price_stats
 from .config import ROOT, Settings, load_sellers
+from .dataapi import (
+    DataAPIClient, DataAPIConfig, DataAPIError, DataAPINotConfigured,
+    parse_response_file,
+)
 from .inbox import find_pages, import_folder
 from .probe import DEFAULT_PROFILES, available_profiles, diagnose, run_probe
 from .report import export_listings, write_csvs, write_html, write_json
@@ -234,6 +238,90 @@ def cmd_plan(args, settings: Settings) -> int:
 
     print_coverage_warnings(coverage_rows, settings.lookback_days)
     return 0
+
+
+def cmd_apipull(args, settings: Settings) -> int:
+    """Pull sold listings from your configured data API. This is the automatic
+    route: no browser, no blocking, safe to schedule."""
+    try:
+        config = DataAPIConfig.from_dict(settings.data_api())
+    except DataAPINotConfigured as exc:
+        print(exc, file=sys.stderr)
+        return 2
+
+    queries = args.query.split(",") if args.query else settings.queries()
+    if not queries:
+        print("No queries. Add a `queries:` list to settings.yml or pass --query.",
+              file=sys.stderr)
+        return 1
+
+    since = None
+    if settings.lookback_days:
+        since = dt.date.today() - dt.timedelta(days=settings.lookback_days)
+
+    client = DataAPIClient(config, timeout=settings.timeout_seconds)
+    print(f"Pulling {len(queries)} query(ies) from {config.provider}.\n")
+    rows = []
+    with open_store(settings) as store:
+        for query in queries:
+            try:
+                listings = client.fetch(query.strip(), max_pages=args.max_pages,
+                                        since=since)
+            except DataAPINotConfigured as exc:
+                print(exc, file=sys.stderr)
+                return 2
+            except DataAPIError as exc:
+                print(f"  {query}: {exc}", file=sys.stderr)
+                rows.append({"query": query, "found": 0, "new": 0, "status": "error"})
+                continue
+            found, new = store.upsert_many(listings) if listings else (0, 0)
+            rows.append({"query": query, "found": found, "new": new, "status": "ok"})
+            print(f"  {query:<24} {found:>4} rows ({new} new)")
+        print()
+        print_table(rows, [("query", "query"), ("rows", "found"), ("new", "new"),
+                           ("status", "status")], limit=len(rows))
+        print(f"\nDatabase now holds {store.count():,} rows "
+              f"({' to '.join(str(d) for d in store.date_span())}).")
+    total_new = sum(r["new"] for r in rows)
+    if total_new:
+        print("\nNext:  python -m ebayparts report")
+    return 0
+
+
+def cmd_apitest(args, settings: Settings) -> int:
+    """Check a field_map against a saved JSON response, no key or network needed.
+
+    Save one response from your vendor (their API playground has a 'copy
+    response' button) to a file, then run this to confirm your field_map is
+    right before wiring up the key."""
+    try:
+        config = DataAPIConfig.from_dict(settings.data_api())
+    except DataAPINotConfigured as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    try:
+        listings = parse_response_file(args.path, config)
+    except DataAPIError as exc:
+        print(f"Mapping failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"{args.path}: {len(listings)} listing(s) mapped via {config.provider}\n")
+    for item in listings[: args.limit]:
+        print(f"  {item.sold_date}  ${item.price} +{item.shipping_cost} "
+              f"({item.shipping_status})  {item.make}/{item.model} | {item.part_category}")
+        print(f"    {item.title[:72]}")
+    if listings:
+        missing = {
+            "price": sum(1 for i in listings if i.price is None),
+            "sold_date": sum(1 for i in listings if i.sold_date is None),
+            "make": sum(1 for i in listings if i.make is None),
+            "part_category": sum(1 for i in listings if i.part_category is None),
+        }
+        print("\n  missing:", ", ".join(f"{k}={v}" for k, v in missing.items()))
+        print("  If a column is all-missing, fix that field in field_map.")
+    else:
+        print("  Nothing mapped. Check results_path points to the list of items.")
+    return 0 if listings else 1
 
 
 def cmd_browser(args, settings: Settings) -> int:
@@ -635,6 +723,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ignore-hours", action="store_true",
                    help="run even outside the configured active hours")
     p.set_defaults(func=cmd_scrape)
+
+    p = sub.add_parser("apipull", help="pull sold data from a data API (automatic, not blocked)")
+    p.add_argument("--query", help="comma-separated terms; default is queries: in settings")
+    p.add_argument("--max-pages", type=int, help="cap pages per query")
+    p.set_defaults(func=cmd_apipull)
+
+    p = sub.add_parser("apitest", help="test your data_api field_map on a saved JSON response")
+    p.add_argument("path")
+    p.add_argument("--limit", type=int, default=10)
+    p.set_defaults(func=cmd_apitest)
 
     p = sub.add_parser("browser", help="open the persistent browser profile once, by hand")
     p.add_argument("--url", help="page to open (default: the eBay homepage)")

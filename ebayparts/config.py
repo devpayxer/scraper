@@ -98,6 +98,20 @@ class Settings:
         extra = {k: v for k, v in raw.items() if k not in known}
         return cls(extra=extra, **kwargs)
 
+    def data_api(self) -> dict[str, Any]:
+        return self.extra.get("data_api") or {}
+
+    def queries(self) -> list[str]:
+        """Keyword/category terms to pull from a data API."""
+        raw = self.extra.get("queries") or []
+        out = []
+        for q in raw:
+            if isinstance(q, dict):
+                q = q.get("q") or q.get("query")
+            if q:
+                out.append(str(q))
+        return out
+
     def pacing(self, mode: str | None = None) -> Pacing:
         """The pacing profile for `mode` (defaults to the configured mode)."""
         mode = mode or self.mode

@@ -93,3 +93,55 @@ browser_executable: ""       # path to an existing Chrome/Chromium, or "" to use
                              # the one `playwright install chromium` downloads
 cache_ttl_hours: 20
 database: data/parts.db
+
+
+# =========================================================================
+# DATA API  --  the route that actually updates automatically
+# =========================================================================
+# eBay blocks scraping from most connections. A data-API vendor does the
+# scraping on their side and hands you clean JSON, so `apipull` never gets
+# blocked and can run on a schedule. You pay the vendor; you do not fight eBay.
+#
+# The key is read from an ENVIRONMENT VARIABLE (api_key_env), never stored here.
+# Set it once:  setx EBAY_DATA_API_KEY "your-key"   (then open a new terminal)
+#
+# This block is provider-agnostic. Pick a vendor, then fill base_url, how the
+# key is sent, and field_map (their JSON field -> our field). Test your map with
+# a saved response and no key:   python -m ebayparts apitest response.json
+#
+# Example shape (edit for your chosen provider, then uncomment):
+#
+# data_api:
+#   provider: "OpenWeb Ninja Real-Time eBay Data (RapidAPI)"
+#   base_url: "https://real-time-ebay-data.p.rapidapi.com"
+#   path: "/search"
+#   api_key_env: EBAY_DATA_API_KEY
+#   auth_header: x-rapidapi-key
+#   headers:
+#     x-rapidapi-host: real-time-ebay-data.p.rapidapi.com
+#   query:
+#     q: "{query}"
+#     sold_items: "true"
+#   results_path: "data.products"     # dotted path to the list in their JSON
+#   page_param: "page"
+#   start_page: 1
+#   max_pages: 5
+#   field_map:                         # <their JSON field>  ->  <our field>
+#     title: "title"
+#     price: "sold_price.value"
+#     currency: "sold_price.currency"
+#     shipping: "shipping_cost"
+#     sold_date: "sold_date"
+#     url: "product_url"
+#     item_id: "product_id"
+#     condition: "condition"
+#     image_url: "image"
+#     seller: "seller.name"
+
+# What to pull. These are the categories/keywords you actually want to study.
+queries:
+  - q: "headlight"
+  - q: "tail light"
+  - q: "mirror"
+  - q: "bumper"
+  - q: "ecu ecm pcm"

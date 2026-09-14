@@ -28,12 +28,14 @@ if not exist ".venv\Scripts\python.exe" (
 
 set PYTHONUTF8=1
 set LOG=scrape.log
+REM Your data-API key. Or set it once system-wide:  setx EBAY_DATA_API_KEY "your-key"
+REM if "%EBAY_DATA_API_KEY%"=="" set EBAY_DATA_API_KEY=your-key-here
 
 echo. >> "%LOG%"
-echo ===== %DATE% %TIME% scrape ===== >> "%LOG%"
-".venv\Scripts\python.exe" -m ebayparts scrape >> "%LOG%" 2>&1
+echo ===== %DATE% %TIME% apipull ===== >> "%LOG%"
+".venv\Scripts\python.exe" -m ebayparts apipull >> "%LOG%" 2>&1
 if errorlevel 1 (
-    echo scrape failed, see %LOG%
+    echo apipull failed, see %LOG%
     exit /b 1
 )
 

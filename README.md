@@ -35,6 +35,57 @@ letting the database grow.
 
 ---
 
+## The automatic route that does not get blocked
+
+If you tried the scraping routes and eBay refused them (it will, from most home
+and datacenter connections), stop fighting the website. The way to get sold data
+that **updates on a schedule and never hits a captcha** is a data-API vendor: they
+do the scraping on their side and hand you clean JSON. You pay them a small
+monthly fee instead of fighting eBay yourself.
+
+```bash
+# 1. Sign up with a vendor and get an API key. Options that return sold data:
+#      - OpenWeb Ninja "Real-Time eBay Data" (via RapidAPI, has a free tier)
+#      - SoldComps (sold listings, 8 marketplaces)
+#      - an Apify eBay-sold-listings actor (dataset -> JSON)
+#      - eBay's own Marketplace Insights API, if you are granted access
+#
+# 2. Put your key in an environment variable (never in a file):
+setx EBAY_DATA_API_KEY "your-key-here"        # Windows; open a NEW terminal after
+
+# 3. Describe the vendor in config/settings.yml (data_api block) -- base URL and
+#    a field_map from their JSON to ours. There is a worked example in the file.
+#
+# 4. Confirm your field_map is right, with no key and no network, using one saved
+#    response from the vendor's API playground:
+python -m ebayparts apitest saved_response.json
+
+# 5. Pull, on demand or on a schedule:
+python -m ebayparts apipull
+python -m ebayparts report
+```
+
+`apipull` reuses everything else unchanged -- the make/model/part enrichment, the
+90-day window, dedupe, and the report all run on API rows exactly as on scraped
+ones. Point Windows Task Scheduler at `scripts\run_windows.bat` (which now calls
+`apipull`) and it updates itself daily with no browser and nothing to get blocked.
+
+**Why this and not scraping:** eBay actively defends its site, so any scraper you
+run will keep breaking. A data vendor absorbs that fight as their business. Free +
+automatic + sold data do not exist together; this trades a few dollars a month for
+"set it and forget it".
+
+The queries you pull are just the categories you want to study:
+
+```yaml
+queries:
+  - q: "headlight"
+  - q: "tail light"
+  - q: "bumper"
+```
+
+---
+
 ## How this stays quiet
 
 The thing that gets traffic flagged is **volume and rhythm**, not headers. A
@@ -247,6 +298,8 @@ Only `user` is required — it is what goes into eBay's `_ssn=` parameter.
 | Command | What it does |
 |---|---|
 | `scrape` | One paced run: a few sellers, a capped number of pages. `--mode backfill` for the initial pull, `--sellers a,b`, `--max-pages N`, `--ignore-hours`, `--no-cache`, `--engine playwright` |
+| `apipull` | **Pull sold data from a data API — the automatic, unblocked route.** `--query`, `--max-pages` |
+| `apitest` | Test your `data_api` field_map against a saved JSON response, no key needed |
 | `plan` | Show what the next run would do — budget, queue, timing. Touches nothing |
 | `probe` | Find a browser profile eBay answers on your connection. `--list` shows all targets |
 | `browser` | Open the persistent browser profile once, by hand (cookie banner, region) |
