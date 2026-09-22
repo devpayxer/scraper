@@ -28,14 +28,15 @@ if not exist ".venv\Scripts\python.exe" (
 
 set PYTHONUTF8=1
 set LOG=scrape.log
-REM Your data-API key. Or set it once system-wide:  setx EBAY_DATA_API_KEY "your-key"
-REM if "%EBAY_DATA_API_KEY%"=="" set EBAY_DATA_API_KEY=your-key-here
+REM eBay API credentials. Set them once system-wide instead of editing here:
+REM   setx EBAY_APP_ID "YourApp-xxxxx-PRD-xxxxxxxxx-xxxxxxxx"
+REM   setx EBAY_CERT_ID "PRD-xxxxxxxxxxxx-xxxx-xxxx-xxxx-xxxx"
 
 echo. >> "%LOG%"
-echo ===== %DATE% %TIME% apipull ===== >> "%LOG%"
-".venv\Scripts\python.exe" -m ebayparts apipull >> "%LOG%" 2>&1
+echo ===== %DATE% %TIME% watch ===== >> "%LOG%"
+".venv\Scripts\python.exe" -m ebayparts watch >> "%LOG%" 2>&1
 if errorlevel 1 (
-    echo apipull failed, see %LOG%
+    echo watch failed, see %LOG%
     exit /b 1
 )
 

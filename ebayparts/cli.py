@@ -14,7 +14,12 @@ from .dataapi import (
     DataAPIClient, DataAPIConfig, DataAPIError, DataAPINotConfigured,
     parse_response_file,
 )
+from .ebayapi import (
+    DEFAULT_DAILY_CALL_BUDGET, EbayAPIError, EbayBrowseClient, EbayCredentials,
+    EbayCredentialsMissing,
+)
 from .inbox import find_pages, import_folder
+from .watch import watch_query
 from .probe import DEFAULT_PROFILES, available_profiles, diagnose, run_probe
 from .report import export_listings, write_csvs, write_html, write_json
 from .scrape import DayBudget, discover_sellers, scrape_all
@@ -237,6 +242,109 @@ def cmd_plan(args, settings: Settings) -> int:
                     limit=7)
 
     print_coverage_warnings(coverage_rows, settings.lookback_days)
+    return 0
+
+
+def _ebay_client(settings: Settings, args) -> EbayBrowseClient:
+    creds = EbayCredentials.from_env(
+        marketplace_id=settings.extra.get("ebay_marketplace_id", "EBAY_US"),
+        sandbox=bool(getattr(args, "sandbox", False)),
+    )
+    return EbayBrowseClient(creds, timeout=settings.timeout_seconds,
+                            call_budget=settings.extra.get(
+                                "ebay_daily_call_budget", DEFAULT_DAILY_CALL_BUDGET))
+
+
+def cmd_apicheck(args, settings: Settings) -> int:
+    """Verify the eBay credentials work. One token + one tiny search."""
+    try:
+        client = _ebay_client(settings, args)
+    except EbayCredentialsMissing as exc:
+        print(exc, file=sys.stderr)
+        return 2
+
+    env = "Sandbox" if client.credentials.sandbox else "Production"
+    print(f"\nChecking {env} credentials for {client.credentials.marketplace_id}...")
+    try:
+        client.token()
+        print("  OAuth token         OK")
+    except EbayAPIError as exc:
+        print(f"  OAuth token         FAILED\n\n{exc}", file=sys.stderr)
+        return 1
+
+    try:
+        payload = client.search(query=args.query, category_ids=settings.default_category,
+                                limit=3)
+    except EbayAPIError as exc:
+        print(f"  Browse search       FAILED\n\n{exc}", file=sys.stderr)
+        return 1
+
+    total = payload.get("total")
+    items = payload.get("itemSummaries") or []
+    print(f"  Browse search       OK  ({total:,} active listings match "
+          f"'{args.query}')" if total is not None else "  Browse search       OK")
+    for raw in items[:3]:
+        price = (raw.get("price") or {}).get("value")
+        print(f"    ${price:<10} {raw.get('title','')[:62]}")
+    print("\nCredentials work. Next:  python -m ebayparts watch")
+    return 0
+
+
+def cmd_watch(args, settings: Settings) -> int:
+    """Snapshot active listings and bank the ones that disappeared as sales."""
+    try:
+        client = _ebay_client(settings, args)
+    except EbayCredentialsMissing as exc:
+        print(exc, file=sys.stderr)
+        return 2
+
+    queries = args.query.split(",") if args.query else settings.queries()
+    if not queries:
+        print("No queries. Add a `queries:` list to settings.yml or pass --query.",
+              file=sys.stderr)
+        return 1
+
+    print(f"Watching {len(queries)} query(ies) via the official Browse API "
+          f"(budget {client.call_budget} calls/day).\n")
+    rows = []
+    with open_store(settings) as store:
+        for query in queries:
+            result = watch_query(client, store, query.strip(),
+                                 category_ids=settings.default_category,
+                                 max_items=args.max_items)
+            rows.append({
+                "query": result.query,
+                "listed": result.seen,
+                "new": result.added,
+                "gone": result.disappeared,
+                "sales": result.inferred_sales,
+                "calls": result.api_calls,
+                "status": "error" if result.error else "ok",
+            })
+            if result.error:
+                print(f"  {result.query}: {result.error}", file=sys.stderr)
+            else:
+                print(f"  {result.query:<22} {result.seen:>4} listed, "
+                      f"{result.disappeared:>3} gone -> {result.inferred_sales} sale(s)")
+        print()
+        print_table(rows, [("query", "query"), ("listed", "listed"), ("new", "new"),
+                           ("gone", "gone"), ("sales", "sales"), ("calls", "calls"),
+                           ("status", "status")], limit=len(rows))
+
+        watched = store.query("SELECT COUNT(*) c FROM active_listings WHERE gone=0")[0]["c"]
+        inferred = store.query(
+            "SELECT COUNT(*) c FROM listings WHERE source='inferred'")[0]["c"]
+        print(f"\nNow watching {watched:,} active listing(s). "
+              f"{inferred:,} inferred sale(s) banked so far.")
+        print(f"API calls used this run: {client.calls_made}")
+
+    total_sales = sum(r["sales"] for r in rows)
+    if total_sales == 0:
+        print("\nNo sales yet -- that is expected on the first runs. The signal "
+              "comes from listings disappearing between runs, so run this daily "
+              "and the data builds from here.")
+    else:
+        print("\nNext:  python -m ebayparts report")
     return 0
 
 
@@ -723,6 +831,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ignore-hours", action="store_true",
                    help="run even outside the configured active hours")
     p.set_defaults(func=cmd_scrape)
+
+    p = sub.add_parser("apicheck", help="verify your eBay API credentials work")
+    p.add_argument("--query", default="headlight", help="test search term")
+    p.add_argument("--sandbox", action="store_true")
+    p.set_defaults(func=cmd_apicheck)
+
+    p = sub.add_parser("watch",
+                       help="official eBay API: snapshot active listings, infer sales")
+    p.add_argument("--query", help="comma-separated terms; default is queries: in settings")
+    p.add_argument("--max-items", type=int, default=600, help="max listings per query")
+    p.add_argument("--sandbox", action="store_true")
+    p.set_defaults(func=cmd_watch)
 
     p = sub.add_parser("apipull", help="pull sold data from a data API (automatic, not blocked)")
     p.add_argument("--query", help="comma-separated terms; default is queries: in settings")

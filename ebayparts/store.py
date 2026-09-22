@@ -79,6 +79,41 @@ CREATE TABLE IF NOT EXISTS seller_state (
     consecutive_blocks INTEGER DEFAULT 0
 );
 
+-- Active listings seen by the official Browse API, one row per item.
+-- Diffing yesterday's snapshot against today's is how we recover a sales
+-- signal from an API that only exposes what is currently for sale.
+CREATE TABLE IF NOT EXISTS active_listings (
+    item_id        TEXT PRIMARY KEY,
+    title          TEXT NOT NULL,
+    price          REAL,
+    currency       TEXT,
+    shipping_cost  REAL,
+    condition      TEXT,
+    seller         TEXT,
+    seller_feedback_pct REAL,
+    item_end_date  TEXT,
+    url            TEXT,
+    image_url      TEXT,
+    location       TEXT,
+    query          TEXT,
+    first_seen     TEXT,
+    last_seen      TEXT,
+    times_seen     INTEGER DEFAULT 1,
+    gone           INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_active_last_seen ON active_listings(last_seen);
+CREATE INDEX IF NOT EXISTS idx_active_gone ON active_listings(gone);
+
+CREATE TABLE IF NOT EXISTS watch_runs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ran_at     TEXT,
+    query      TEXT,
+    seen       INTEGER,
+    added      INTEGER,
+    disappeared INTEGER,
+    api_calls  INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS scrape_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     started_at  TEXT,
@@ -98,6 +133,7 @@ COLUMNS = [
     "total_price", "quantity_sold", "condition", "location", "image_url",
     "year_from", "year_to", "make", "model", "part_category", "part_group",
     "is_oem", "side", "position", "source_url", "first_seen", "last_seen",
+    "source", "confidence",
 ]
 
 # Columns recomputed from the title. `reindex` rewrites exactly these, so
@@ -154,7 +190,20 @@ class Store:
         self.conn = sqlite3.connect(self.path)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Additive migrations for databases created by an earlier version."""
+        columns = {r[1] for r in self.conn.execute("PRAGMA table_info(listings)")}
+        if "source" not in columns:
+            # 'sold_page' = parsed from an eBay sold page; 'api' = a data API;
+            # 'inferred' = an active listing that disappeared (see watch.py).
+            self.conn.execute(
+                "ALTER TABLE listings ADD COLUMN source TEXT DEFAULT 'sold_page'")
+        if "confidence" not in columns:
+            self.conn.execute(
+                "ALTER TABLE listings ADD COLUMN confidence TEXT DEFAULT 'observed'")
 
     # ----------------------------------------------------------- lifecycle
     def close(self) -> None:

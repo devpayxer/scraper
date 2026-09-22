@@ -35,6 +35,51 @@ letting the database grow.
 
 ---
 
+## The official eBay API route (recommended)
+
+With a free eBay developer account you get the **Browse API**: OAuth, 5,000
+calls/day, completely sanctioned. No captcha, no 403, nothing to get blocked.
+
+**The honest catch:** Browse returns *active* listings, not sold ones. The old
+`findCompletedItems` call was decommissioned in February 2025, and sold history
+now lives only in the Marketplace Insights API, which is a restricted release
+that individuals are usually not granted.
+
+**So we recover sales by watching.** A used car part is almost always a
+quantity-1 listing: when it sells, the listing disappears. `watch` snapshots
+what is currently listed, and a listing that was there yesterday and is gone
+today is banked as a sale. Each inference is graded rather than guessed:
+
+| grade | meaning | counted as a sale |
+|---|---|---|
+| `likely` | vanished well before its end date | yes |
+| `uncertain` | vanished near its end date, or no end date published | yes |
+| `expired` | already past its end date | **no** |
+
+```bash
+# 1. developer.ebay.com -> Application Keys -> Production. Copy App ID + Cert ID.
+setx EBAY_APP_ID  "YourApp-xxxxx-PRD-xxxxxxxxx-xxxxxxxx"
+setx EBAY_CERT_ID "PRD-xxxxxxxxxxxx-xxxx-xxxx-xxxx-xxxx"
+#    then open a NEW terminal
+
+# 2. confirm they work (one token, one small search)
+python -m ebayparts apicheck
+
+# 3. run daily -- this is the whole loop
+python -m ebayparts watch
+python -m ebayparts report
+```
+
+**What to expect:** day one gives you supply and asking prices but zero sales,
+because nothing has disappeared yet. The sales signal builds from the second run
+onward. After two or three weeks you have a real picture of what moves, and it
+keeps accumulating for as long as you run it.
+
+That is the same deal as accumulating a scraped 90-day window, except this one
+is official, free, and cannot be blocked.
+
+---
+
 ## The automatic route that does not get blocked
 
 If you tried the scraping routes and eBay refused them (it will, from most home
@@ -298,7 +343,9 @@ Only `user` is required — it is what goes into eBay's `_ssn=` parameter.
 | Command | What it does |
 |---|---|
 | `scrape` | One paced run: a few sellers, a capped number of pages. `--mode backfill` for the initial pull, `--sellers a,b`, `--max-pages N`, `--ignore-hours`, `--no-cache`, `--engine playwright` |
-| `apipull` | **Pull sold data from a data API — the automatic, unblocked route.** `--query`, `--max-pages` |
+| `apicheck` | Verify your eBay API credentials (one token, one search) |
+| `watch` | **Official eBay API: snapshot active listings and infer sales from disappearances** |
+| `apipull` | Pull sold data from a data API — the automatic, unblocked route.** `--query`, `--max-pages` |
 | `apitest` | Test your `data_api` field_map against a saved JSON response, no key needed |
 | `plan` | Show what the next run would do — budget, queue, timing. Touches nothing |
 | `probe` | Find a browser profile eBay answers on your connection. `--list` shows all targets |

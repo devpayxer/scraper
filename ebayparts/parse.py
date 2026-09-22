@@ -121,6 +121,8 @@ class Listing:
     side: str | None = None
     position: str | None = None
 
+    source: str = "sold_page"
+    confidence: str = "observed"
     source_url: str | None = None
     scraped_at: dt.datetime = field(default_factory=dt.datetime.utcnow)
 
